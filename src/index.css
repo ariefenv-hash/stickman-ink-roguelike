@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .font-calligraphy {
+    font-family: 'Ma Shan Zheng', cursive, 'Noto Serif SC', serif;
+  }
+  .font-ink-serif {
+    font-family: 'Noto Serif SC', serif;
+  }
+}
+
+/* Custom scrollbars and ink style effects */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(180, 160, 140, 0.3);
+  border-radius: 2px;
+}
