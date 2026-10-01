@@ -1,4 +1,4 @@
-import inkSeal from '@/assets/images/ink_seal_martial_art_1790306578422.jpg';
+import inkSeal from '@/src/assets/images/ink_seal_martial_art_1790306578422.jpg';
 /**
  * Game Title Screen / Main Menu
  */
