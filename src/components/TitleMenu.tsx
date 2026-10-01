@@ -1,11 +1,12 @@
+import inkSeal from '@/assets/images/ink_seal_martial_art_1790306578422.jpg';
 /**
  * Game Title Screen / Main Menu
  */
 
 import React, { useState } from 'react';
 import { Play, BookOpen, Volume2, ShieldAlert, Award } from 'lucide-react';
-import inkSeal from '@/assets/images/ink_seal_martial_art_1790306578422.jpg';
-import inkSeal from '@/assets/images/ink_seal_martial_art_1790306578422.jpg';
+
+
 
 interface TitleMenuProps {
   onStart: (difficulty: 'EASY' | 'NORMAL' | 'HARD') => void;
