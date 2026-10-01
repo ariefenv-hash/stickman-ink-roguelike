@@ -4,6 +4,7 @@
 
 import React, { useState } from 'react';
 import { Play, BookOpen, Volume2, ShieldAlert, Award } from 'lucide-react';
+import inkSeal from '@/assets/images/ink_seal_martial_art_1790306578422.jpg';
 
 interface TitleMenuProps {
   onStart: (difficulty: 'EASY' | 'NORMAL' | 'HARD') => void;
@@ -19,7 +20,7 @@ export const TitleMenu: React.FC<TitleMenuProps> = ({ onStart, onOpenManual }) =
         {/* Decorative Seal Icon */}
         <div className="w-16 h-16 rounded-xl overflow-hidden border border-[#b91c1c] shadow-lg mb-4">
           <img
-            src="/src/assets/images/ink_seal_martial_art_1790306578422.jpg"
+            src={inkSeal}
             alt="墨武"
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
