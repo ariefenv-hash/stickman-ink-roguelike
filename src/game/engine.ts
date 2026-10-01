@@ -2,7 +2,8 @@
  * Pseudo-3D Ink Wash Stickman Combat Engine
  */
 
-import bgImg from '@/assets/images/ink_wash_mountain_backdrop_1790306562587.jpg';
+
+
 import bgImg from '@/assets/images/ink_wash_mountain_backdrop_1790306562587.jpg';
 import { sound } from '../utils/audio';
 import { ALL_AFFIXES, drawRandomAffixes } from './affixes';
