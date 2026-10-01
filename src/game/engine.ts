@@ -4,7 +4,7 @@
 
 
 
-import bgImg from '@/assets/images/ink_wash_mountain_backdrop_1790306562587.jpg';
+import bgImg from '@/src/assets/images/ink_wash_mountain_backdrop_1790306562587.jpg';
 import { sound } from '../utils/audio';
 import { ALL_AFFIXES, drawRandomAffixes } from './affixes';
 import { GestureRecognizer, StrokePoint } from './gestureRecognizer';
