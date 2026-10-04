@@ -320,6 +320,20 @@ export const ALL_AFFIXES: Affix[] = [
       maxHpBonus: 40,
     },
   },
+  // ==================== 画龙点睛（26 → 27） ====================
+  {
+    id: 'eye_dotting',
+    name: '画龙点睛',
+    hanziSeal: '睛',
+    rarity: 'EPIC',
+    desc: '笔锋点睛：挥毫划过妖敌头顶要穴（头部小圆域）必定会心，该击伤害提升60%，并落下朱砂点睛之印。',
+    iconType: 'brush',
+    stats: {
+      eyeStrikeEnabled: true,
+      eyeStrikeBonus: 60,
+      gestureBonus: 12,
+    },
+  },
 ];
 
 /** 稀有度基础权重（越高越稀有） */

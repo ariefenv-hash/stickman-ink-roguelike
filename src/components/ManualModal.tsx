@@ -89,7 +89,7 @@ export const ManualModal: React.FC<ManualModalProps> = ({ onClose }) => {
             <div>
               <span className="font-semibold text-[#92400e]">全屏跟手滑动 · 到达拔剑斩击</span>
               <p className="text-[#85745a] mt-0.5 leading-relaxed">
-                手指在屏幕滑动即可极速紧密跟手位移（滑到哪角色就到哪），到达滑动终点后<strong className="text-[#0369a1]">自动拔剑释放斩击</strong>！攻击命中将使敌人陷入<strong className="text-[#dc2626]">【受击硬直（破势）】</strong>，打断敌人攻击并震颤击退；若直接划过敌人更可触发多目标<strong className="text-[#b91c1c]">【瞬杀连斩】</strong>！
+                手指在屏幕滑动即可极速紧密跟手位移（滑到哪角色就到哪），到达滑动终点后<strong className="text-[#0369a1]">自动拔剑释放斩击</strong>！攻击命中将使敌人陷入<strong className="text-[#dc2626]">【受击硬直（破势）】</strong>，打断敌人攻击并震颤击退；若直接划过敌人更可触发多目标<strong className="text-[#b91c1c]">【瞬杀连斩】</strong>！持有<strong className="text-[#7e22ce]">【画龙点睛】</strong>词条时，笔锋若精确划过妖敌头顶要穴，该击必定会心且伤害大增！
               </p>
             </div>
           </div>
@@ -115,7 +115,7 @@ export const ManualModal: React.FC<ManualModalProps> = ({ onClose }) => {
           <div className="p-2.5 bg-[#dfe7ea] rounded-lg border border-[#a9c3d4] flex items-start gap-2">
             <Crown className="w-4 h-4 text-[#b45309] shrink-0 mt-0.5" />
             <div className="text-[10px] font-ink-serif text-[#85745a] leading-relaxed">
-              <span className="text-[#b45309] font-semibold">宗师技变</span>：首领掌握震地冲击（红圈预警可走位躲）、墨珠散射与召唤护法，半血后狂暴化！
+              <span className="text-[#b45309] font-semibold">Boss 三强线</span>：五折「墨煞先锋」突进快攻（橙圈预警可横向走位躲）；十折「墨煞宗师」震地（红圈预警）+墨珠散射+召唤；十五折「墨煞大帝」三阶段狂化——66% 狂暴、33% 入「灭」境解锁全场墨雨（连环橙圈），走位躲圈为上策！
             </div>
           </div>
           <div className="p-2.5 bg-[#e9e2f0] rounded-lg border border-[#c3aed6] flex items-start gap-2">
@@ -167,7 +167,7 @@ export const ManualModal: React.FC<ManualModalProps> = ({ onClose }) => {
             </div>
             <div className="p-2.5 bg-[#f0e4e8] rounded-lg border border-[#c4a3b0] flex items-start gap-2">
               <div className="text-[10px] font-ink-serif text-[#85745a] leading-relaxed">
-                <span className="text-[#5b2333] font-semibold">醉墨剑客</span>：酒褐剑客醉步摇摆逼近，挥击有 35% 概率被<strong className="text-[#5b2333]">「醉避」</strong>闪开——趁它头顶亮「斩」出招后或「醉倒」踉跄时全力输出！
+                <span className="text-[#5b2333] font-semibold">醉墨剑客</span>：酒褐剑客醉步摇摆逼近，挥击有 28% 概率被<strong className="text-[#5b2333]">「醉避」</strong>闪开（闪避后有冷却，不会连续触发）——趁它头顶亮「斩」出招后或「醉倒」踉跄时全力输出！
               </div>
             </div>
           </div>

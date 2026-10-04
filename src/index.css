@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* 移动端触控体验：去点按灰色高亮、禁橡皮筋回弹（刘海屏安全区由 HUD 内 env() 适配） */
+html, body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
 @layer utilities {
   .font-calligraphy {
     font-family: 'Ma Shan Zheng', cursive, 'Noto Serif SC', serif;

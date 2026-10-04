@@ -3,7 +3,7 @@
  * Smooth procedural bones with Chinese ink brush calligraphy aesthetics
  */
 
-import { ActionState, EnemyType, SkeletonPose } from '../types/game';
+import { ActionState, BossTier, EnemyType, SkeletonPose } from '../types/game';
 
 /**
  * 预计算骨骼调色板：按种族查表（原 render 每实体每帧新建对象字面量 + 六层三元链，全量省去）
@@ -17,6 +17,9 @@ const BONE_PALETTES: Record<string, { main: string; dim: string; limb: string }>
   INK_CRANE: { main: '#2f4858', dim: '#3c5a6e', limb: '#4a6b80' },
   INK_TURTLE: { main: '#3b3a36', dim: '#4a4843', limb: '#585650' },
   INK_DRUNKARD: { main: '#5b2333', dim: '#6d3243', limb: '#7d4052' },
+  // Boss 三强线：先锋焦赭（轻装快攻）/ 宗师暗赤（默认）/ 大帝玄墨金纹（终折重压）
+  BOSS_VANGUARD: { main: '#6b3a1f', dim: '#7c4a2c', limb: '#8a5a38' },
+  BOSS_OVERLORD: { main: '#241f19', dim: '#3a332a', limb: '#4a4136' },
   DEFAULT: { main: '#54241a', dim: '#6b3226', limb: '#7a4132' },
 };
 
@@ -329,6 +332,8 @@ export class StickmanSkeleton {
       ribbonPhase?: number;
       isAttacking?: boolean;
       shieldDown?: boolean; // 墨盾武僧：出招/受击时收盾（破防窗口）
+      bossTier?: BossTier;  // Boss 三强线外观分层（先锋/宗师/大帝）
+      bossPhase?: 1 | 2 | 3; // Boss 阶段（大帝「灭」阶段金瞳）
     }
   ) {
     ctx.save();
@@ -339,9 +344,12 @@ export class StickmanSkeleton {
     ctx.globalAlpha = alpha;
 
     // Bone stroke style：玩家纯黑墨骨，敌军按种族区分妖墨色相（浅色宣纸上双方都清晰且可辨）
-    // 预计算调色板查表，替代原每帧对象字面量分配
+    // 预计算调色板查表，替代原每帧对象字面量分配；Boss 三强线在 INK_BOSS 基础上再分层
+    const isBoss = options.enemyType === 'INK_BOSS';
     const palette = options.isPlayer
       ? BONE_PALETTES.PLAYER
+      : isBoss && options.bossTier === 1 ? BONE_PALETTES.BOSS_VANGUARD
+      : isBoss && options.bossTier === 3 ? BONE_PALETTES.BOSS_OVERLORD
       : BONE_PALETTES[options.enemyType ?? ''] ?? BONE_PALETTES.DEFAULT;
     const mainColor = palette.main;
     ctx.strokeStyle = mainColor;
@@ -349,7 +357,7 @@ export class StickmanSkeleton {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    const boneWidth = options.isPlayer ? 3.5 : options.enemyType === 'INK_BRUTE' ? 5.5 : options.enemyType === 'INK_SHIELD_GUARD' ? 4.2 : options.enemyType === 'INK_TURTLE' ? 4.6 : 3.0;
+    const boneWidth = options.isPlayer ? 3.5 : options.enemyType === 'INK_BRUTE' ? 5.5 : options.enemyType === 'INK_SHIELD_GUARD' ? 4.2 : options.enemyType === 'INK_TURTLE' ? 4.6 : isBoss ? (options.bossTier === 3 ? 4.6 : options.bossTier === 1 ? 3.8 : 4.2) : 3.0;
     ctx.lineWidth = boneWidth;
 
     // Rig geometry constants (scaled to ~65px standing stickman)
@@ -506,10 +514,12 @@ export class StickmanSkeleton {
       ctx.fill();
     }
 
-    // Bamboo Hat for player or bosses
+    // Bamboo Hat for player or bosses（Boss 三强线：先锋窄笠焦褐 / 宗师暗赤 / 大帝宽笠金边双穗）
     if (options.isPlayer || options.enemyType === 'INK_BOSS') {
-      const hatW = options.isPlayer ? 24 : 32;
-      const hatH = options.isPlayer ? 7 : 10;
+      const isBossHat = !options.isPlayer;
+      const tier = isBossHat ? (options.bossTier ?? 2) : 0;
+      const hatW = options.isPlayer ? 24 : tier === 3 ? 40 : tier === 1 ? 28 : 32;
+      const hatH = options.isPlayer ? 7 : tier === 3 ? 13 : tier === 1 ? 9 : 10;
       ctx.save();
       ctx.translate(headX, headY - headRadius * 0.4);
       ctx.rotate(pose.headAngle);
@@ -520,13 +530,23 @@ export class StickmanSkeleton {
       ctx.lineTo(0, -hatH);
       ctx.lineTo(hatW / 2, 0);
       ctx.closePath();
-      ctx.fillStyle = options.isPlayer ? '#322c26' : '#5c1d1d';
+      ctx.fillStyle = options.isPlayer ? '#322c26' : tier === 1 ? '#4a2c14' : tier === 3 ? '#2b2419' : '#5c1d1d';
       ctx.fill();
       ctx.strokeStyle = '#1a1918';
       ctx.lineWidth = 1.8;
       ctx.stroke();
+      // 大帝金边斗笠
+      if (isBossHat && tier === 3) {
+        ctx.beginPath();
+        ctx.moveTo(-hatW / 2 + 1.5, -0.5);
+        ctx.lineTo(0, -hatH + 2.5);
+        ctx.lineTo(hatW / 2 - 1.5, -0.5);
+        ctx.strokeStyle = '#b8860b';
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+      }
 
-      // Red cinnabar ribbon (斗笠剑穗) fluttering behind
+      // 斗笠剑穗（大帝双穗：金穗+赤穗；先锋/宗师赤穗）
       const ribbonPhase = options.ribbonPhase ?? 0;
       const r1 = Math.sin(ribbonPhase) * 4;
       const r2 = Math.cos(ribbonPhase * 1.3) * 6;
@@ -536,8 +556,35 @@ export class StickmanSkeleton {
       ctx.strokeStyle = '#c22020'; // Vermilion red
       ctx.lineWidth = 2.2;
       ctx.stroke();
+      if (isBossHat && tier === 3) {
+        ctx.beginPath();
+        ctx.moveTo(-hatW * 0.15, -1);
+        ctx.bezierCurveTo(-hatW * 0.45 - 4, 4 + r2, -hatW * 0.7 - 8, 10 + r1, -hatW - 8, 16 + r2);
+        ctx.strokeStyle = '#b8860b'; // Gold ribbon
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+      }
 
       ctx.restore();
+
+      // 先锋双肩墨刺（轻装突进者的兽肩甲）
+      if (isBossHat && tier === 1) {
+        const spikeH = 7;
+        for (const side of [-1, 1] as const) {
+          const sx0 = side * 9;
+          const sy0 = -52;
+          ctx.beginPath();
+          ctx.moveTo(sx0 - 4, sy0);
+          ctx.lineTo(sx0 + side * 2, sy0 - spikeH);
+          ctx.lineTo(sx0 + 4, sy0 + 1);
+          ctx.closePath();
+          ctx.fillStyle = '#4a2c14';
+          ctx.fill();
+          ctx.strokeStyle = '#1a1918';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
+      }
     }
 
     // 3. Legs

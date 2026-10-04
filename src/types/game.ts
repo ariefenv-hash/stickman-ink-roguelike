@@ -59,6 +59,9 @@ export interface Affix {
     awakeningDamageBonus?: number;    // 觉醒技伤害提升
     awakeningRadiusBonus?: number;    // 觉醒技范围扩大
     awakeningOnWaveStart?: number;    // 每波开战直接获得觉醒充能
+    // --- 画龙点睛（精准打击） ---
+    eyeStrikeEnabled?: boolean;       // 挥砍笔迹划过妖敌头部要穴时触发点睛会心
+    eyeStrikeBonus?: number;          // 点睛一击的伤害加成（百分比）
   };
 }
 
@@ -112,7 +115,12 @@ export interface EliteInfo {
 }
 
 // Boss 技能类型
-export type BossSkillType = 'SEISMIC_SLAM' | 'INK_VOLLEY' | 'SUMMON' | 'ENRAGE';
+// CHARGE_RUSH 墨刃突进（先锋）：预警后直线冲锋撞人
+// INK_RAIN 落墨成渊（大帝三阶段）：全场墨雨连环轰炸
+export type BossSkillType = 'SEISMIC_SLAM' | 'INK_VOLLEY' | 'SUMMON' | 'ENRAGE' | 'CHARGE_RUSH' | 'INK_RAIN';
+
+// Boss 三强线：1=墨煞先锋（第5折） 2=墨煞宗师（第10折） 3=墨煞大帝（第15折·终折）
+export type BossTier = 1 | 2 | 3;
 
 export interface BossSkillState {
   skill: BossSkillType;
@@ -185,7 +193,11 @@ export interface EnemyEntity {
   windupTimer?: number;             // 攻击前摇预警剩余
   windupMax?: number;               // 前摇总时长
   bossSkills?: BossSkillState[];    // Boss 技能组
-  bossPhase?: 1 | 2;                // Boss 阶段
+  bossPhase?: 1 | 2 | 3;            // Boss 阶段（大帝有三阶段：狂暴→灭）
+  bossTier?: BossTier;              // Boss 三强线（先锋/宗师/大帝）
+  bossChargeVX?: number;            // 墨刃突进：冲锋速度 X（先锋专属）
+  bossChargeVZ?: number;            // 墨刃突进：冲锋速度 Z
+  bossChargeHit?: boolean;          // 墨刃突进：本次冲锋是否已命中
   teleportCooldown?: number;        // 刺客瞬移冷却
   turnCooldown?: number;            // 墨盾武僧转身迟缓计时（留绕背窗口）
   deathTimer?: number;              // 尸体消散计时
@@ -373,5 +385,5 @@ export interface BossHudInfo {
   name: string;
   hp: number;
   maxHp: number;
-  phase: 1 | 2;
+  phase: 1 | 2 | 3;
 }

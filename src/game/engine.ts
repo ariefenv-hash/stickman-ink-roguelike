@@ -15,6 +15,7 @@ import {
   Affix,
   BossHudInfo,
   BossSkillState,
+  BossTier,
   ControlMode,
   DashGhost,
   EliteInfo,
@@ -91,6 +92,8 @@ export class GameEngine {
   private screenWidth: number = 1200;
   private screenHeight: number = 700;
   private dpr: number = 1;
+  /** 触屏设备（粗指针）：用于触控专属 DPR 上限与笔锋指引 */
+  private coarsePointer: boolean = false;
 
   // 觉醒技「万墨归宗」：命中/击杀充能，满槽释放全屏墨爆
   private awakening: number = 0;
@@ -205,6 +208,9 @@ export class GameEngine {
     if (!context) throw new Error('Cannot get 2d context');
     this.ctx = context;
     this.callbacks = callbacks;
+    // 触屏检测：粗指针设备降 DPR 上限（1.75）省像素填充，水墨风视觉无损
+    this.coarsePointer =
+      typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
 
     this.player = this.createInitialPlayer();
     this.initBackground();
@@ -248,8 +254,8 @@ export class GameEngine {
   }
 
   public setSize(w: number, h: number) {
-    // DPR 高清渲染：高分屏不再模糊
-    this.dpr = Math.min(2, window.devicePixelRatio || 1);
+    // DPR 高清渲染：高分屏不再模糊；触屏设备上限 1.75（水墨笔触柔和，肉眼无损，省约 1/4 像素填充）
+    this.dpr = Math.min(this.coarsePointer ? 1.75 : 2, window.devicePixelRatio || 1);
     this.screenWidth = w;
     this.screenHeight = h;
     this.canvas.width = Math.round(w * this.dpr);
@@ -555,6 +561,8 @@ export class GameEngine {
     this.dashGhosts = [];
     this.activeStroke = [];
     this.clearScheduled();
+    this.pendingSlam = null;
+    this.pendingCharge = null;
     this.inkSlashes = [];
     this.groundDecals = [];
     this.shockRings = [];
@@ -718,8 +726,10 @@ export class GameEngine {
       title += '鹤噪墨空';
       count = 22;
     } else if (waveNum === 10) {
-      title += '砚甲横江';
-      count = 24;
+      // 生成器本就将 5 的倍数折视为 Boss 波（首刷即宗师）——标题同步修正为 Boss 波，砚甲龟护法随行
+      title += '砚甲横江 · 宗师亲征';
+      count = 16;
+      isBossWave = true;
     } else if (waveNum === 11) {
       title += '醉剑狂歌';
       count = 26;
@@ -728,7 +738,11 @@ export class GameEngine {
       count = 3 + Math.floor(waveNum / 2);
       isBossWave = true;
     } else if (waveNum % 5 === 0) {
-      title += '墨煞宗师降临';
+      // Boss 三强线：5折先锋→10折宗师→15折大帝；无尽 20+ 大帝再临连袭
+      title += waveNum === 5 ? '墨煞先锋 · 破阵'
+        : waveNum === 10 ? '墨煞宗师降临'
+        : waveNum === 20 ? '墨煞大帝 · 再临'
+        : `墨煞大帝 · 第${this.getChineseNumeral(waveNum / 5 - 2)}袭`;
       count = 1 + waveNum;
       isBossWave = true;
     } else {
@@ -818,6 +832,8 @@ export class GameEngine {
       if (this.wave >= 9) pool.push({ type: 'INK_CRANE', w: 3.5 });
       if (this.wave >= 10) pool.push({ type: 'INK_TURTLE', w: 3 });
       if (this.wave >= 11) pool.push({ type: 'INK_DRUNKARD', w: 3.5 });
+      // 第十折「砚甲横江」：护法以砚甲龟为主题（同屏仍限一只）
+      if (this.wave === 10) pool.push({ type: 'INK_TURTLE', w: 14 });
       // 符笔妖道同屏至多一位（超出则回退墨卒，避免召唤海啸）；砚台龟同理（反震坦克堆场拖慢节奏）
       let filtered = pool;
       if (this.enemies.some((e) => e.type === 'INK_SUMMONER' && e.hp > 0)) {
@@ -862,7 +878,12 @@ export class GameEngine {
 
   /** 敌人显示名 */
   private enemyDisplayName(type: EnemyType, isBoss: boolean): string {
-    if (isBoss) return '墨煞宗师';
+    if (isBoss) {
+      // Boss 三强线：按折数分级（5折先锋/10折宗师/15折+大帝）
+      if (this.wave < 10) return '墨煞先锋';
+      if (this.wave < 15) return '墨煞宗师';
+      return '墨煞大帝';
+    }
     switch (type) {
       case 'INK_BRUTE': return '巨力狂墨';
       case 'SHADOW_NINJA': return '暗影刺客';
@@ -882,6 +903,7 @@ export class GameEngine {
     let hp = 45 + this.wave * 12;
     let damage = 12 + this.wave * 2;
     let scale = 1.0;
+    let bossTierOf: BossTier | undefined;
 
     if (type === 'INK_BRUTE') {
       hp = 140 + this.wave * 25;
@@ -920,9 +942,22 @@ export class GameEngine {
       damage = 16 + this.wave * 3;
       scale = 1.0;
     } else if (type === 'INK_BOSS') {
-      hp = 450 + this.wave * 80;
-      damage = 35 + this.wave * 5;
-      scale = 1.6;
+      // Boss 三强线数值分层：先锋（快攻型）＜ 宗师（标准）＜ 大帝（终折三阶段）
+      const bossTier: BossTier = this.wave >= 15 ? 3 : this.wave >= 10 ? 2 : 1;
+      if (bossTier === 1) {
+        hp = 280 + this.wave * 50;
+        damage = 26 + this.wave * 4;
+        scale = 1.38;
+      } else if (bossTier === 2) {
+        hp = 460 + this.wave * 75;
+        damage = 34 + this.wave * 5;
+        scale = 1.6;
+      } else {
+        hp = 620 + this.wave * 95;
+        damage = 40 + this.wave * 6;
+        scale = 1.75;
+      }
+      bossTierOf = bossTier;
     }
 
     hp *= tune.enemyHp;
@@ -957,6 +992,7 @@ export class GameEngine {
       isAirborne: false,
       scale,
       isBoss,
+      bossTier: bossTierOf,
       elite,
       frostSlowTimer: 0,
       burnTimer: 0,
@@ -980,11 +1016,27 @@ export class GameEngine {
     }
 
     if (isBoss) {
-      enemy.bossSkills = [
-        { skill: 'SEISMIC_SLAM', timer: 4.5, windup: 0, active: 0 },
-        { skill: 'INK_VOLLEY', timer: 6.5, windup: 0, active: 0 },
-        { skill: 'SUMMON', timer: 9, windup: 0, active: 0 },
-      ];
+      // Boss 三强线技能组：先锋=突进快攻 / 宗师=震地+散射+召唤 / 大帝=全套+三阶段墨雨
+      if (bossTierOf === 1) {
+        enemy.bossSkills = [
+          { skill: 'CHARGE_RUSH', timer: 4.0, windup: 0, active: 0 },
+          { skill: 'SEISMIC_SLAM', timer: 7.0, windup: 0, active: 0 },
+          { skill: 'SUMMON', timer: 12, windup: 0, active: 0 },
+        ];
+      } else if (bossTierOf === 2) {
+        enemy.bossSkills = [
+          { skill: 'SEISMIC_SLAM', timer: 4.5, windup: 0, active: 0 },
+          { skill: 'INK_VOLLEY', timer: 6.5, windup: 0, active: 0 },
+          { skill: 'SUMMON', timer: 9, windup: 0, active: 0 },
+        ];
+      } else {
+        enemy.bossSkills = [
+          { skill: 'SEISMIC_SLAM', timer: 5.0, windup: 0, active: 0 },
+          { skill: 'INK_VOLLEY', timer: 7.0, windup: 0, active: 0 },
+          { skill: 'SUMMON', timer: 10, windup: 0, active: 0 },
+          { skill: 'INK_RAIN', timer: 14, windup: 0, active: 0 },
+        ];
+      }
       this.activeBoss = enemy;
       this.callbacks.onBossUpdate({ name: enemy.name, hp: enemy.hp, maxHp: enemy.maxHp, phase: 1 });
       this.lastBossEmitted = enemy.id;
@@ -1229,8 +1281,12 @@ export class GameEngine {
     interface SlicedTarget {
       enemy: EnemyEntity;
       hitIndex: number;
+      /** 画龙点睛：笔迹精确划过该敌头顶要穴（需持有词条） */
+      eye: boolean;
     }
     const slicedTargets: SlicedTarget[] = [];
+    // 点睛词条持有判定（每笔一次）
+    const eyeEnabled = this.player.affixes.some((a) => a.stats.eyeStrikeEnabled);
 
     for (const enemy of this.enemies) {
       if (enemy.hp <= 0 || (enemy.spawnGrace ?? 0) > 0.3) continue;
@@ -1239,13 +1295,22 @@ export class GameEngine {
       const targetY = proj.sy - 28 * proj.scale;
       const targetRadius = 48 * proj.scale * enemy.scale;
 
+      // 头部要穴屏幕坐标（骷髅头顶约在脚底上方 70 刚体单位，含斗笠判定略放宽）
+      const headX = proj.sx;
+      const headY = proj.sy - 70 * proj.scale * enemy.scale;
+      const headRadius = 12.5 * proj.scale * enemy.scale;
+
       let minHitIdx = -1;
+      let eyeHit = false;
 
       // Check single-point / short tap directly on target
       if (points.length <= 2 || totalDist < 25) {
         const d = Math.hypot(targetX - pStart.x, targetY - pStart.y);
         if (d <= targetRadius) {
           minHitIdx = 0;
+        }
+        if (eyeEnabled && Math.hypot(headX - pStart.x, headY - pStart.y) <= headRadius) {
+          eyeHit = true;
         }
       } else {
         // Multi-point stroke line segments
@@ -1256,10 +1321,20 @@ export class GameEngine {
             break;
           }
         }
+        // 点睛判定独立于躯干命中：全笔迹扫过头部小圆域即算（后段收笔点穴同样成立）
+        if (eyeEnabled) {
+          for (let i = 1; i < points.length; i++) {
+            const d = this.distToSegment(headX, headY, points[i - 1].x, points[i - 1].y, points[i].x, points[i].y);
+            if (d <= headRadius) {
+              eyeHit = true;
+              break;
+            }
+          }
+        }
       }
 
       if (minHitIdx >= 0) {
-        slicedTargets.push({ enemy, hitIndex: minHitIdx });
+        slicedTargets.push({ enemy, hitIndex: minHitIdx, eye: eyeHit });
       }
     }
 
@@ -1271,7 +1346,7 @@ export class GameEngine {
     if (slicedEnemies.length > 0) {
       this.callbacks.onGestureRecognized(result);
       sound.playCalligraphyGong(result.name);
-      this.executePhantomSliceChain(slicedEnemies, result);
+      this.executePhantomSliceChain(slicedTargets, result);
       return;
     }
 
@@ -1288,7 +1363,7 @@ export class GameEngine {
     this.executeGestureMove(result);
   }
 
-  private executePhantomSliceChain(enemies: EnemyEntity[], gesture: GestureResult) {
+  private executePhantomSliceChain(targets: { enemy: EnemyEntity; eye: boolean }[], gesture: GestureResult) {
     const player = this.player;
 
     // Ink cost
@@ -1307,8 +1382,8 @@ export class GameEngine {
     let prevScreen = this.project(player.pos);
     const sealChars = ['斩', '裂', '断', '破', '绝', '煞', '影'];
 
-    enemies.forEach((targetEnemy, i) => {
-      const targetScreen = this.project(targetEnemy.pos);
+    targets.forEach((target, i) => {
+      const targetScreen = this.project(target.enemy.pos);
       const sealHanzi = sealChars[i % sealChars.length];
       this.slashLinks.push({
         id: Math.random().toString(),
@@ -1332,7 +1407,8 @@ export class GameEngine {
       'ATTACK_TAICHI',
     ];
 
-    enemies.forEach((enemy, idx) => {
+    targets.forEach((target, idx) => {
+      const enemy = target.enemy;
       this.schedule(idx * 0.085, () => {
         if (enemy.hp <= 0 && idx > 0) return;
 
@@ -1380,10 +1456,18 @@ export class GameEngine {
         for (const a of player.affixes) {
           if (a.stats.critChanceBonus) critChance += a.stats.critChanceBonus;
         }
-        const isCrit = Math.random() < critChance;
-        const finalDmg = Math.round(isCrit ? baseDmg * this.getCritMultiplier() : baseDmg);
+        // 画龙点睛：笔锋划过头顶要穴——必定会心，伤害额外提升（eyeStrikeBonus 词条）
+        const eyeBonus = target.eye ? this.sumStat('eyeStrikeBonus') : 0;
+        const isCrit = target.eye || Math.random() < critChance;
+        const finalDmg = Math.round(isCrit ? baseDmg * this.getCritMultiplier() * (1 + eyeBonus / 100) : baseDmg);
 
         this.damageEnemy(enemy, finalDmg, isCrit, undefined, true);
+
+        // 点睛演出：朱砂点穴墨花 + 印章浮字（先于躯干特效，突出命中位置在头顶）
+        if (target.eye) {
+          this.addFloatingText('点睛', enemy.pos.x, enemy.pos.y + 76, '#b91c1c', 1.5, true, true);
+          this.spawnInkBurst({ x: enemy.pos.x, y: enemy.pos.y + 64, z: enemy.pos.z }, 12, '#b91c1c');
+        }
 
         // 招式专属剑弧 + 高密度墨花（连斩每一击都有独立笔刷特效）
         this.spawnInkSlash(enemy.pos.x, enemy.pos.y + 24, enemy.pos.z, this.slashKindOf(player.state), player.facing, 0.95,
@@ -1930,18 +2014,19 @@ export class GameEngine {
       // 对空规则：普通招式够不到高空（dy<45），「挑」可击落悬停的飞白鹤（dy<115）
       const dyLimit = opts.antiAir ? 115 : 45;
       if (dx > -20 && dx < opts.rangeX && dz < opts.rangeZ && dy < dyLimit) {
-        // 醉墨剑客：醉步侧闪——非前摇/硬直/出招中 35% 概率瞬间侧移避开挥击（冷却 2.2s）
+        // 醉墨剑客：醉步侧闪——非前摇/硬直/出招中 28% 概率瞬间侧移避开挥击（冷却 2.5s）
+        // 闪避限量原则：概率+双冷却门控，保证连段节奏与爽感不被频繁落空破坏
         if (
           enemy.type === 'INK_DRUNKARD' &&
           (enemy.dodgeCooldown ?? 0) <= 0 &&
           enemy.hitStun <= 0 &&
           enemy.state !== 'WINDUP' && !enemy.state.startsWith('ATTACK')
         ) {
-          if (Math.random() < 0.35) {
+          if (Math.random() < 0.28) {
             const side = Math.random() < 0.5 ? 1 : -1;
             enemy.pos.x -= player.facing * 55;
             enemy.pos.z = Math.max(-140, Math.min(140, enemy.pos.z + side * 52));
-            enemy.dodgeCooldown = 2.2;
+            enemy.dodgeCooldown = 2.5;
             this.spawnSpeedLines(enemy.pos, 6, '#5b2333');
             this.addFloatingText('醉避', enemy.pos.x, enemy.pos.y + 58, '#5b2333', 1.15);
             continue; // 完全避开这一击（不计 hitCount，不触发命中停帧）
@@ -2930,9 +3015,11 @@ export class GameEngine {
 
       // Boss 技能系统
       if (enemy.isBoss && enemy.bossSkills) {
-        this.updateBossSkills(enemy, dt);
-        // 二阶段狂暴判定
-        if (enemy.bossPhase === 1 && enemy.hp < enemy.maxHp * 0.5) {
+        this.updateBossSkills(enemy, dt, slowFactor);
+        // 阶段判定：大帝三阶段（66%狂暴→33%灭），先锋/宗师两阶段（50%狂暴）
+        const isTier3 = enemy.bossTier === 3;
+        const phase2Threshold = isTier3 ? 0.66 : 0.5;
+        if (enemy.bossPhase === 1 && enemy.hp < enemy.maxHp * phase2Threshold) {
           enemy.bossPhase = 2;
           this.cameraShake = 20;
           sound.playBossWarn();
@@ -2945,6 +3032,21 @@ export class GameEngine {
           this.triggerSlowMo(0.45);
           this.triggerInkEdge(0.55);
           this.callbacks.onBossUpdate({ name: enemy.name, hp: enemy.hp, maxHp: enemy.maxHp, phase: 2 });
+        } else if (isTier3 && enemy.bossPhase === 2 && enemy.hp < enemy.maxHp * 0.33) {
+          // 大帝第三阶段「灭」：解锁墨雨，全技能加速，移速再增
+          enemy.bossPhase = 3;
+          this.cameraShake = 26;
+          sound.playBossWarn();
+          this.addFloatingText('墨煞 · 灭', enemy.pos.x, enemy.pos.y + 105, '#fbbf24', 2.3, true, true);
+          this.spawnInkBurst(enemy.pos, 46, '#1c1917');
+          this.spawnShockRing(enemy.pos.x, enemy.pos.z, 16, 230, 0.9, '#fbbf24', 5);
+          this.spawnShockRing(enemy.pos.x, enemy.pos.z, 12, 165, 0.7, '#7f1d1d', 4);
+          this.spawnShockRing(enemy.pos.x, enemy.pos.z, 8, 110, 0.5, '#1a1611', 3);
+          this.spawnDeathWisps(enemy.pos, '#fbbf24');
+          this.triggerSlowMo(0.6);
+          this.triggerInkEdge(0.8);
+          this.triggerZoomPunch(0.05);
+          this.callbacks.onBossUpdate({ name: enemy.name, hp: enemy.hp, maxHp: enemy.maxHp, phase: 3 });
         }
       }
 
@@ -3172,7 +3274,7 @@ export class GameEngine {
           sound.playWindup();
         }
       } else if (enemy.type === 'INK_DRUNKARD') {
-        // 醉墨剑客：醉步摇摆逼近，35% 概率侧身「醉避」挥击；连斩后醉倒踉跄=破绽
+        // 醉墨剑客：醉步摇摆逼近，28% 概率侧身「醉避」挥击；连斩后醉倒踉跄=破绽
         enemy.dodgeCooldown = Math.max(0, (enemy.dodgeCooldown ?? 0) - dt);
         enemy.swayPhase = (enemy.swayPhase ?? 0) + dt * 2.4;
         const speed = 128;
@@ -3194,11 +3296,15 @@ export class GameEngine {
           enemy.attackCooldown = 2.6;
           sound.playWindup();
         }
+      } else if (enemy.isBoss && enemy.bossSkills?.some((s) => s.skill === 'CHARGE_RUSH' && (s.active ?? 0) > 0)) {
+        // 墨刃突进冲锋中：不叠加常规追击移动/近战起手（冲撞由 Boss 技能系统全权驱动）
+        enemy.state = 'ATTACK_DASH';
       } else {
         // Melee pursue (Minion, Brute, Ninja, Boss)
         let speed = enemy.type === 'SHADOW_NINJA' ? 140 : enemy.type === 'INK_BRUTE' ? 85 : 110;
         if (enemy.isBoss) speed = 120;
         if (enemy.bossPhase === 2) speed *= 1.35;
+        else if (enemy.bossPhase === 3) speed *= 1.5; // 大帝「灭」阶段移速再增
         if (enemy.elite?.modifier === 'SWIFT') speed *= 1.45;
 
         // 暗影刺客：瞬移背刺
@@ -3580,11 +3686,59 @@ export class GameEngine {
   }
 
   /** Boss 技能组调度 */
-  private updateBossSkills(boss: EnemyEntity, dt: number) {
+  private updateBossSkills(boss: EnemyEntity, dt: number, slowFactor: number) {
     if (!boss.bossSkills) return;
     const player = this.player;
 
     for (const skill of boss.bossSkills) {
+      // 墨刃突进：冲锋进行中（先锋专属直线冲撞）
+      if (skill.skill === 'CHARGE_RUSH' && skill.active > 0) {
+        skill.active -= dt;
+        boss.pos.x += (boss.bossChargeVX ?? 0) * dt * slowFactor;
+        boss.pos.z += (boss.bossChargeVZ ?? 0) * dt * slowFactor;
+        // 冲锋拖尾墨迹
+        if (Math.random() < 0.7) {
+          this.pushParticle({
+            x: boss.pos.x - (boss.bossChargeVX ?? 0) * 0.03,
+            y: 12 + Math.random() * 26,
+            z: boss.pos.z - (boss.bossChargeVZ ?? 0) * 0.03,
+            vx: (Math.random() - 0.5) * 1.2,
+            vy: (Math.random() - 0.5) * 1.2,
+            vz: (Math.random() - 0.5) * 1.2,
+            size: 3 + Math.random() * 3,
+            alpha: 0.55 + Math.random() * 0.25,
+            decay: 0.05,
+            color: '#5c1d1d',
+            shape: 'streak',
+            stretch: 0.8,
+            noGravity: true,
+          });
+        }
+        // 冲锋接触判定（每次冲锋至多命中一次）
+        if (!boss.bossChargeHit) {
+          const cdx = player.pos.x - boss.pos.x;
+          const cdz = player.pos.z - boss.pos.z;
+          if (Math.hypot(cdx, cdz) < 52) {
+            boss.bossChargeHit = true;
+            this.hurtPlayer(Math.round(boss.damage * 1.1), player.pos.x >= boss.pos.x ? 1 : -1, boss);
+            this.addFloatingText('墨刃突进', boss.pos.x, boss.pos.y + 70, '#ef4444', 1.4, true);
+            // 命中顿帧 + 溅墨
+            this.spawnInkBurst(player.pos, 12, '#5c1d1d');
+            this.triggerZoomPunch(0.03);
+          }
+        }
+        if (skill.active <= 0) {
+          // 冲锋收势：急停激波 + 小地裂
+          boss.bossChargeVX = 0;
+          boss.bossChargeVZ = 0;
+          boss.state = 'IDLE';
+          boss.stateDuration = 0.4;
+          this.spawnShockRing(boss.pos.x, boss.pos.z, 6, 90, 0.4, '#5c1d1d', 3);
+          this.cameraShake = Math.max(this.cameraShake, 8);
+        }
+        continue;
+      }
+
       if (skill.windup > 0) {
         skill.windup -= dt;
         if (skill.windup <= 0) {
@@ -3594,15 +3748,27 @@ export class GameEngine {
         continue;
       }
 
-      // 二阶段才解锁召唤
-      if (skill.skill === 'SUMMON' && boss.bossPhase !== 2) continue;
+      // 召唤解锁：二阶段起（大帝三阶段同样可召）
+      if (skill.skill === 'SUMMON' && boss.bossPhase === 1) continue;
+      // 墨雨解锁：大帝第三阶段「灭」专属
+      if (skill.skill === 'INK_RAIN' && boss.bossPhase !== 3) continue;
 
       skill.timer -= dt;
       if (skill.timer <= 0 && boss.hitStun <= 0) {
-        // 进入预警
-        const windup = skill.skill === 'SEISMIC_SLAM' ? 0.9 : skill.skill === 'INK_VOLLEY' ? 0.6 : 0.5;
+        // 进入预警（阶段越深冷却越短，压力递增）
+        const phaseScale = boss.bossPhase === 3 ? 0.72 : boss.bossPhase === 2 ? 0.85 : 1;
+        const windup = (skill.skill === 'SEISMIC_SLAM' ? 0.9
+          : skill.skill === 'INK_VOLLEY' ? 0.6
+          : skill.skill === 'CHARGE_RUSH' ? 0.75
+          : skill.skill === 'INK_RAIN' ? 0.7
+          : 0.5) * (boss.bossPhase === 3 ? 0.88 : 1);
         skill.windup = windup;
-        skill.timer = skill.skill === 'SEISMIC_SLAM' ? 7.5 : skill.skill === 'INK_VOLLEY' ? 5.5 : 11;
+        skill.active = 0;
+        skill.timer = (skill.skill === 'SEISMIC_SLAM' ? 7.5
+          : skill.skill === 'INK_VOLLEY' ? 5.5
+          : skill.skill === 'CHARGE_RUSH' ? 6.0
+          : skill.skill === 'INK_RAIN' ? 13
+          : 11) * phaseScale;
         boss.state = 'WINDUP';
         boss.stateTimer = 0;
         boss.stateDuration = windup;
@@ -3610,25 +3776,39 @@ export class GameEngine {
         sound.playWindup();
 
         if (skill.skill === 'SEISMIC_SLAM') {
-          // 记录震地圆心（预警圈展开瞬间锁定位置，走位可躲）
-          this.pendingSlam = { x: player.pos.x, z: player.pos.z };
+          // 记录震地圆心与半径（预警圈展开瞬间锁定位置，走位可躲；半径随 Boss 强度递增）
+          const slamRadius = boss.bossTier === 1 ? 78 : boss.bossTier === 2 ? 95 : 112;
+          this.pendingSlam = { x: player.pos.x, z: player.pos.z, r: slamRadius };
           // 地面预警圈在玩家当前位置展开
           this.telegraphs.push({
             id: Math.random().toString(),
             x: player.pos.x,
             z: player.pos.z,
-            radius: 95,
+            radius: slamRadius,
             windup: 0.9,
             windupTimer: 0,
             color: '#ef4444',
+          });
+        } else if (skill.skill === 'CHARGE_RUSH') {
+          // 突进预警：锁定玩家当前位置（冲锋方向出手瞬间确定，横向走位可躲）
+          this.pendingCharge = { x: player.pos.x, z: player.pos.z };
+          this.telegraphs.push({
+            id: Math.random().toString(),
+            x: player.pos.x,
+            z: player.pos.z,
+            radius: 52,
+            windup: 0.75,
+            windupTimer: 0,
+            color: '#f97316',
           });
         }
       }
     }
   }
 
-  // 震地判定圆心（预警圈展开时锁定）
-  private pendingSlam: { x: number; z: number } | null = null;
+  // 震地/突进判定圆心（预警圈展开时锁定；先锋同持两技能，分字段防互覆）
+  private pendingSlam: { x: number; z: number; r: number } | null = null;
+  private pendingCharge: { x: number; z: number } | null = null;
 
   private castBossSkill(boss: EnemyEntity, skill: BossSkillState['skill']) {
     const player = this.player;
@@ -3637,6 +3817,7 @@ export class GameEngine {
       // 以预警圈锁定的圆心判定（离开圈范围即可躲）
       const cx = this.pendingSlam?.x ?? player.pos.x;
       const cz = this.pendingSlam?.z ?? player.pos.z;
+      const cr = this.pendingSlam?.r ?? 95;
       this.pendingSlam = null;
       this.cameraShake = 22;
       sound.playHit(true);
@@ -3646,15 +3827,17 @@ export class GameEngine {
       this.spawnShockRing(cx, cz, 8, 140, 0.6, '#7f1d1d', 4);
       this.spawnShockRing(cx, cz, 6, 95, 0.45, '#1a1611', 3);
       this.triggerZoomPunch(0.042);
-      if (Math.hypot(player.pos.x - cx, player.pos.z - cz) < 95) {
+      if (Math.hypot(player.pos.x - cx, player.pos.z - cz) < cr) {
         this.hurtPlayer(Math.round(boss.damage * 1.2), player.pos.x >= cx ? 1 : -1, boss);
         this.addFloatingText('震岳一击', cx, 60, '#ef4444', 1.5, true);
       }
     } else if (skill === 'INK_VOLLEY') {
-      // 五连墨珠扇形散射
+      // 墨珠扇形散射（大帝七连珠，其余五连珠）
+      const orbCount = boss.bossTier === 3 ? 3 : 2;
+      const spread = boss.bossTier === 3 ? 0.19 : 0.22;
       const baseAngle = Math.atan2(player.pos.z - boss.pos.z, player.pos.x - boss.pos.x);
-      for (let i = -2; i <= 2; i++) {
-        const angle = baseAngle + i * 0.22;
+      for (let i = -orbCount; i <= orbCount; i++) {
+        const angle = baseAngle + i * spread;
         this.shootProjectile({
           pos: { x: boss.pos.x + boss.facing * 25, y: 22, z: boss.pos.z },
           vel: { x: Math.cos(angle) * 8.5, y: 0, z: Math.sin(angle) * 8.5 },
@@ -3668,11 +3851,66 @@ export class GameEngine {
       }
       sound.playSlash('heavy');
     } else if (skill === 'SUMMON') {
-      // 召唤两只墨卒护法
-      for (let i = 0; i < 2; i++) {
-        this.spawnEnemyAt('INK_MINION', boss.pos.x + (i === 0 ? -70 : 70), boss.pos.z + (Math.random() - 0.5) * 40, false, null);
+      // 召唤墨卒护法（先锋1只/宗师2只/大帝2-3只）
+      const count = boss.bossTier === 1 ? 1 : boss.bossPhase === 3 ? 3 : 2;
+      for (let i = 0; i < count; i++) {
+        this.spawnEnemyAt('INK_MINION', boss.pos.x + (i - (count - 1) / 2) * 70, boss.pos.z + (Math.random() - 0.5) * 40, false, null);
       }
       this.addFloatingText('墨卒 · 护法', boss.pos.x, boss.pos.y + 90, '#6b5a42', 1.3, true);
+    } else if (skill === 'CHARGE_RUSH') {
+      // 墨刃突进：锁定预警圈位置方向，直线高速冲撞
+      const tx = this.pendingCharge?.x ?? player.pos.x;
+      const tz = this.pendingCharge?.z ?? player.pos.z;
+      this.pendingCharge = null;
+      const dx = tx - boss.pos.x;
+      const dz = tz - boss.pos.z;
+      const d = Math.max(1, Math.hypot(dx, dz));
+      const chargeSpeed = 620;
+      boss.bossChargeVX = (dx / d) * chargeSpeed;
+      boss.bossChargeVZ = (dz / d) * chargeSpeed;
+      boss.bossChargeHit = false;
+      boss.facing = dx >= 0 ? 1 : -1;
+      const chargeSkill = boss.bossSkills?.find((s) => s.skill === 'CHARGE_RUSH');
+      if (chargeSkill) chargeSkill.active = 0.5;
+      boss.state = 'ATTACK_DASH';
+      boss.stateTimer = 0;
+      boss.stateDuration = 0.55;
+      sound.playSlash('heavy');
+      this.spawnSpeedLines(boss.pos, 8, '#5c1d1d');
+    } else if (skill === 'INK_RAIN') {
+      // 落墨成渊：大帝三阶段全场墨雨，五连环 bombing（先玩家位置一圈，其余随机散布）
+      this.addFloatingText('落墨成渊', boss.pos.x, boss.pos.y + 100, '#fbbf24', 1.7, true, true);
+      const dropRadius = 58;
+      const positions: { x: number; z: number }[] = [{ x: player.pos.x, z: player.pos.z }];
+      for (let i = 0; i < 4; i++) {
+        positions.push({
+          x: player.pos.x + (Math.random() - 0.5) * 380,
+          z: player.pos.z + (Math.random() - 0.5) * 240,
+        });
+      }
+      positions.forEach((p, i) => {
+        this.telegraphs.push({
+          id: Math.random().toString(),
+          x: p.x,
+          z: p.z,
+          radius: dropRadius,
+          windup: 1.0 + i * 0.28,
+          windupTimer: 0,
+          color: '#b45309',
+          onTrigger: () => {
+            this.cameraShake = Math.max(this.cameraShake, 12);
+            sound.playHit(false);
+            this.spawnInkBurst({ x: p.x, y: 0, z: p.z }, 16, '#1c1917');
+            this.addSplatDecal({ x: p.x, y: 0, z: p.z }, 1.1, '#292524');
+            this.spawnShockRing(p.x, p.z, 5, 78, 0.4, '#b45309', 2.5);
+            if (Math.hypot(player.pos.x - p.x, player.pos.z - p.z) < dropRadius) {
+              this.hurtPlayer(Math.round(boss.damage * 0.9), player.pos.x >= p.x ? 1 : -1, boss);
+              this.addFloatingText('墨雨', p.x, 55, '#b45309', 1.3, true);
+            }
+          },
+        });
+      });
+      sound.playBossWarn();
     }
   }
 
@@ -3995,11 +4233,30 @@ export class GameEngine {
             ctx.globalAlpha = 0.5 + pulse * 0.3;
             ctx.lineWidth = 2.5;
             ctx.stroke();
-            // Boss 二阶段红雾
+            ctx.restore();
+          }
+
+          // Boss 阶段光环（独立于精英判定：Boss 波不出精英，原嵌套导致狂暴红雾从未渲染）
+          if (enemy.isBoss && enemy.hp > 0 && (enemy.bossPhase ?? 1) >= 2) {
+            ctx.save();
+            // 二阶段狂暴红雾 / 三阶段「灭」金红双环
             if (enemy.bossPhase === 2) {
+              const pulse2 = (Math.sin(this.nowMs * 0.008) + 1) * 0.5;
               ctx.beginPath();
-              ctx.ellipse(sx, groundY, 44 * finalScale, 17 * finalScale, 0, 0, Math.PI * 2);
-              ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+              ctx.ellipse(sx, groundY, (44 + pulse2 * 5) * finalScale, (17 + pulse2 * 2) * finalScale, 0, 0, Math.PI * 2);
+              ctx.strokeStyle = `rgba(239, 68, 68, ${0.4 + pulse2 * 0.25})`;
+              ctx.lineWidth = 2.5;
+              ctx.stroke();
+            } else if (enemy.bossPhase === 3) {
+              const pulse3 = (Math.sin(this.nowMs * 0.009) + 1) * 0.5;
+              ctx.beginPath();
+              ctx.ellipse(sx, groundY, (50 + pulse3 * 6) * finalScale, (19 + pulse3 * 2) * finalScale, 0, 0, Math.PI * 2);
+              ctx.strokeStyle = `rgba(251, 191, 36, ${0.5 + pulse3 * 0.3})`;
+              ctx.lineWidth = 2.5;
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.ellipse(sx, groundY, 38 * finalScale, 15 * finalScale, 0, 0, Math.PI * 2);
+              ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)';
               ctx.stroke();
             }
             ctx.restore();
@@ -4028,6 +4285,8 @@ export class GameEngine {
           StickmanSkeleton.render(ctx, renderSx, renderSy, finalScale, enemy.facing, pose, {
             isPlayer: false,
             enemyType: enemy.type,
+            bossTier: enemy.bossTier,
+            bossPhase: enemy.bossPhase,
             inkAlpha: (enemy.state === 'DEAD' ? 0.3 : 1.0) * fade,
             shieldDown: enemy.type === 'INK_SHIELD_GUARD' && (enemy.state === 'WINDUP' || enemy.state.startsWith('ATTACK') || enemy.hitStun > 0),
             ribbonPhase: enemy.type === 'INK_SUMMONER' ? this.nowMs * 0.004 : 0,
@@ -4237,6 +4496,25 @@ export class GameEngine {
     // 7. Draw User Calligraphy Brush Stroke
     if (this.activeStroke.length > 0) {
       GestureRecognizer.renderBrushStroke(ctx, this.activeStroke);
+      // 移动端笔锋指引：指尖遮挡触点，在触点上方用朱砂小圈标记实际笔锋位置
+      if (this.coarsePointer) {
+        const tip = this.activeStroke[this.activeStroke.length - 1];
+        ctx.save();
+        ctx.strokeStyle = 'rgba(185, 28, 28, 0.8)';
+        ctx.fillStyle = 'rgba(185, 28, 28, 0.85)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(tip.x, tip.y - 8);
+        ctx.lineTo(tip.x, tip.y - 17);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(tip.x, tip.y - 23, 4.5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(tip.x, tip.y - 23, 1.7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     }
 
     // 8. Draw Touch Joystick on Left Screen (Only if in SPLIT_SCREEN mode and active)
