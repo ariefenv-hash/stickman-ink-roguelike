@@ -15,6 +15,29 @@ class SoundEngine {
   private heartbeatTimer: number | null = null;
   private pentatonicScale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25]; // C, D, E, G, A pentatonic
 
+  // 共享白噪声缓冲池：滑砍/挥剑每次调用都新建 AudioBuffer + 逐样本随机填充
+  // （高频调用下 CPU + GC 双重压力，移动端滑动时明显卡顿）→ 预生成循环复用
+  private noisePool: AudioBuffer[] = [];
+  private static readonly NOISE_POOL_SIZE = 4;
+  private static readonly NOISE_BUF_SEC = 0.5;
+
+  /** 从池中取一段白噪声（AudioBuffer 不可变，可被多个 Source 同时安全播放） */
+  private getNoiseBuffer(): AudioBuffer | null {
+    if (!this.ctx) return null;
+    if (this.noisePool.length === 0) {
+      const len = Math.floor(this.ctx.sampleRate * SoundEngine.NOISE_BUF_SEC);
+      for (let i = 0; i < SoundEngine.NOISE_POOL_SIZE; i++) {
+        const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let j = 0; j < len; j++) {
+          data[j] = Math.random() * 2 - 1;
+        }
+        this.noisePool.push(buf);
+      }
+    }
+    return this.noisePool[(Math.random() * this.noisePool.length) | 0];
+  }
+
   private initCtx(): boolean {
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -84,30 +107,29 @@ class SoundEngine {
     if (!dest || !this.ctx) return;
 
     try {
-      const bufferSize = this.ctx.sampleRate * 0.08;
-      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        data[i] = (Math.random() * 2 - 1) * 0.15;
-      }
+      const now = this.ctx.currentTime;
+      const buffer = this.getNoiseBuffer();
+      if (!buffer) return;
 
       const noise = this.ctx.createBufferSource();
       noise.buffer = buffer;
 
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(800 + Math.random() * 400, this.ctx.currentTime);
-      filter.Q.setValueAtTime(3, this.ctx.currentTime);
+      filter.frequency.setValueAtTime(800 + Math.random() * 400, now);
+      filter.Q.setValueAtTime(3, now);
 
       const gain = this.ctx.createGain();
-      gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.08);
+      // 原 0.15 振幅 × 0.08 增益 ≈ 0.012（改用满振幅共享噪声，振幅并入增益保持响度一致）
+      gain.gain.setValueAtTime(0.012, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
 
       noise.connect(filter);
       filter.connect(gain);
       gain.connect(dest);
 
-      noise.start();
+      noise.start(now);
+      noise.stop(now + 0.09);
     } catch {
       // Audio fallback silent
     }
@@ -148,22 +170,21 @@ class SoundEngine {
       osc.start(now);
       osc.stop(now + duration);
 
-      // Add swoosh noise
-      const bufferSize = this.ctx.sampleRate * duration;
-      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        data[i] = (Math.random() * 2 - 1) * 0.15;
-      }
-      const noise = this.ctx.createBufferSource();
-      noise.buffer = buffer;
-      const noiseGain = this.ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.12, now);
-      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      // Add swoosh noise（共享噪声池，免高频分配）
+      const buffer = this.getNoiseBuffer();
+      if (buffer) {
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        const noiseGain = this.ctx.createGain();
+        // 原 0.15 振幅 × 0.12 增益 ≈ 0.018
+        noiseGain.gain.setValueAtTime(0.018, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
-      noise.connect(noiseGain);
-      noiseGain.connect(dest);
-      noise.start(now);
+        noise.connect(noiseGain);
+        noiseGain.connect(dest);
+        noise.start(now);
+        noise.stop(now + duration + 0.02);
+      }
     } catch {
       // Audio fallback
     }
@@ -598,7 +619,7 @@ class SoundEngine {
    * Ambient Guqin / Guzheng background loop
    */
   public startAmbientBgm() {
-    if (this.bgmInterval || this.isMuted) return;
+    if (this.bgmInterval) return; // 已在运行
     if (!this.initCtx()) return;
 
     const playRandomPluck = () => {
@@ -626,12 +647,20 @@ class SoundEngine {
       }
     };
 
-    // Strum every 2.5 - 4.5 seconds
+    // Strum every 2.5 - 4.5 seconds（静音时仅空转不发声，解除静音后自动恢复）
     this.bgmInterval = window.setInterval(() => {
       if (Math.random() > 0.3) {
         playRandomPluck();
       }
     }, 2800);
+  }
+
+  /** 停止 BGM 循环（暂停/返回标题时调用，防后台空转耗电） */
+  public stopAmbientBgm() {
+    if (this.bgmInterval !== null) {
+      window.clearInterval(this.bgmInterval);
+      this.bgmInterval = null;
+    }
   }
 }
 

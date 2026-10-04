@@ -291,6 +291,7 @@ export class StickmanSkeleton {
       inkAlpha?: number;
       ribbonPhase?: number;
       isAttacking?: boolean;
+      shieldDown?: boolean; // 墨盾武僧：出招/受击时收盾（破防窗口）
     }
   ) {
     ctx.save();
@@ -300,21 +301,37 @@ export class StickmanSkeleton {
     const alpha = options.inkAlpha ?? 1;
     ctx.globalAlpha = alpha;
 
-    // Bone stroke style：玩家纯黑墨骨，妖墨暗赤（浅色宣纸上双方都清晰且可分辨）
-    const mainColor = options.isPlayer ? '#16130f' : '#54241a';
+    // Bone stroke style：玩家纯黑墨骨，敌军按种族区分妖墨色相（浅色宣纸上双方都清晰且可分辨）
+    // 爆墨傀儡焦褐 / 墨盾武僧铁灰 / 符笔妖道墨绿 / 飞白鹤靛青 / 砚台龟墨石 / 醉墨剑客酒褐 / 其余妖墨暗赤
+    const palette = options.isPlayer
+      ? { main: '#16130f', dim: '#2d2b28', limb: '#33312e' }
+      : options.enemyType === 'INK_BOMBER'
+        ? { main: '#6b3410', dim: '#7c4520', limb: '#8a5a30' }
+        : options.enemyType === 'INK_SHIELD_GUARD'
+          ? { main: '#3f4756', dim: '#4b5563', limb: '#5b6572' }
+          : options.enemyType === 'INK_SUMMONER'
+            ? { main: '#3d5a40', dim: '#486b4c', limb: '#557d5a' }
+            : options.enemyType === 'INK_CRANE'
+              ? { main: '#2f4858', dim: '#3c5a6e', limb: '#4a6b80' }
+              : options.enemyType === 'INK_TURTLE'
+                ? { main: '#3b3a36', dim: '#4a4843', limb: '#585650' }
+                : options.enemyType === 'INK_DRUNKARD'
+                  ? { main: '#5b2333', dim: '#6d3243', limb: '#7d4052' }
+                  : { main: '#54241a', dim: '#6b3226', limb: '#7a4132' };
+    const mainColor = palette.main;
     ctx.strokeStyle = mainColor;
     ctx.fillStyle = mainColor;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    const boneWidth = options.isPlayer ? 3.5 : options.enemyType === 'INK_BRUTE' ? 5.5 : 3.0;
+    const boneWidth = options.isPlayer ? 3.5 : options.enemyType === 'INK_BRUTE' ? 5.5 : options.enemyType === 'INK_SHIELD_GUARD' ? 4.2 : options.enemyType === 'INK_TURTLE' ? 4.6 : 3.0;
     ctx.lineWidth = boneWidth;
 
     // Rig geometry constants (scaled to ~65px standing stickman)
     const hipX = 0;
     const hipY = -34;
     const torsoLen = 22;
-    const headRadius = options.enemyType === 'INK_BRUTE' ? 10 : 7.5;
+    const headRadius = options.enemyType === 'INK_BRUTE' ? 10 : options.enemyType === 'INK_SHIELD_GUARD' ? 9 : options.enemyType === 'INK_TURTLE' ? 8.5 : options.enemyType === 'INK_CRANE' ? 6 : 7.5;
     const armLen1 = 11;
     const armLen2 = 11;
     const legLen1 = 15;
@@ -330,6 +347,102 @@ export class StickmanSkeleton {
     ctx.lineTo(shoulderX, shoulderY);
     ctx.stroke();
 
+    // 1.5 种族体型特征：爆墨傀儡圆滚墨肚 + 胸前符纸；符笔妖道道袍下摆
+    if (options.enemyType === 'INK_BOMBER') {
+      const bx = (hipX + shoulderX) / 2;
+      const by = (hipY0 + shoulderY) / 2;
+      ctx.beginPath();
+      ctx.arc(bx, by, 10.5, 0, Math.PI * 2);
+      ctx.fillStyle = mainColor;
+      ctx.fill();
+      // 胸前镇身符纸（宣纸底 + 朱砂印）
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.rotate(pose.torsoAngle * 0.5);
+      ctx.fillStyle = '#efe6cf';
+      ctx.fillRect(-3.5, -6, 7, 12);
+      ctx.fillStyle = '#b91c1c';
+      ctx.fillRect(-2, -2.5, 4, 4);
+      ctx.restore();
+    } else if (options.enemyType === 'INK_SUMMONER') {
+      ctx.beginPath();
+      ctx.moveTo(shoulderX - 8, shoulderY);
+      ctx.lineTo(shoulderX + 8, shoulderY);
+      ctx.lineTo(hipX + 2, hipY0 + 18);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(61, 90, 64, 0.4)';
+      ctx.fill();
+    } else if (options.enemyType === 'INK_CRANE') {
+      // 飞白鹤：双翅（肩后双层弧翼 + 羽端三笔飞白）——随 ribbonPhase 拓动
+      const flap = Math.sin((options.ribbonPhase ?? 0) * 1.6) * 0.35;
+      ctx.save();
+      ctx.translate(shoulderX, shoulderY - 2);
+      ctx.rotate(-0.5 + flap);
+      for (const [wingLen, wingDrop, wAlpha] of [[30, 14, 0.9], [22, 8, 0.55]] as const) {
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(-wingLen * 0.5, -10 - flap * 8, -wingLen, wingDrop);
+        ctx.strokeStyle = mainColor;
+        ctx.globalAlpha = alpha * wAlpha;
+        ctx.lineWidth = 2.6;
+        ctx.stroke();
+        // 羽端三笔（飞白羽尖）
+        for (let f = -1; f <= 1; f++) {
+          ctx.beginPath();
+          ctx.moveTo(-wingLen, wingDrop);
+          ctx.lineTo(-wingLen - 7, wingDrop + 5 + f * 4);
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = alpha;
+      ctx.restore();
+      // 长颈前探曲線（从头到肩的 S 形墨线）
+      ctx.beginPath();
+      ctx.moveTo(shoulderX, shoulderY);
+      ctx.quadraticCurveTo(shoulderX + 6, shoulderY - 10, shoulderX + 4, shoulderY - 16);
+      ctx.strokeStyle = palette.dim;
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    } else if (options.enemyType === 'INK_TURTLE') {
+      // 砚台龟：背负砚台墨甲（背弧甲壳 + 双圈砚池纹）
+      ctx.beginPath();
+      ctx.moveTo(shoulderX - 4, shoulderY + 2);
+      ctx.quadraticCurveTo(shoulderX - 17, shoulderY - 4, hipX - 10, hipY0 + 2);
+      ctx.quadraticCurveTo(hipX - 4, hipY0 + 8, hipX + 2, hipY0 + 6);
+      ctx.closePath();
+      ctx.fillStyle = mainColor;
+      ctx.globalAlpha = alpha * 0.92;
+      ctx.fill();
+      ctx.globalAlpha = alpha;
+      // 砚池双圈纹
+      ctx.beginPath();
+      ctx.arc(shoulderX - 9, shoulderY - 1, 3.2, 0, Math.PI * 2);
+      ctx.strokeStyle = '#efe6cf';
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(hipX - 7, hipY0 - 1, 2.2, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (options.enemyType === 'INK_DRUNKARD') {
+      // 醉墨剑客：腰后酒葫芦（双葫芦形 + 束口）
+      const gx = hipX - 9;
+      const gy = hipY0 - 2;
+      ctx.beginPath();
+      ctx.arc(gx, gy + 3, 4.2, 0, Math.PI * 2);
+      ctx.fillStyle = mainColor;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(gx + 1, gy - 4, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#efe6cf';
+      ctx.lineWidth = 1.0;
+      ctx.beginPath();
+      ctx.moveTo(gx - 1, gy - 6.5);
+      ctx.lineTo(gx + 3, gy - 6.5);
+      ctx.stroke();
+    }
+
     // 2. Head & Martial Arts Bamboo Hat (斗笠)
     const headX = shoulderX + Math.sin(pose.headAngle) * 9;
     const headY = shoulderY - Math.cos(pose.headAngle) * 9 - headRadius;
@@ -337,6 +450,36 @@ export class StickmanSkeleton {
     ctx.beginPath();
     ctx.arc(headX, headY, headRadius, 0, Math.PI * 2);
     ctx.fill();
+
+    // 爆墨傀儡：头顶引信（火花闪烁由引擎渲染层叠加）
+    if (options.enemyType === 'INK_BOMBER') {
+      ctx.beginPath();
+      ctx.moveTo(headX + 2, headY - headRadius);
+      ctx.quadraticCurveTo(headX + 9, headY - headRadius - 8, headX + 5, headY - headRadius - 13);
+      ctx.strokeStyle = '#4a2f1a';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(headX + 5, headY - headRadius - 13, 1.8, 0, Math.PI * 2);
+      ctx.fillStyle = '#f97316';
+      ctx.fill();
+    }
+
+    // 飞白鹤：尖喙（头前三角长喙）
+    if (options.enemyType === 'INK_CRANE') {
+      ctx.beginPath();
+      ctx.moveTo(headX + headRadius - 1, headY - 1.5);
+      ctx.lineTo(headX + headRadius + 9, headY + 1);
+      ctx.lineTo(headX + headRadius - 1, headY + 2.5);
+      ctx.closePath();
+      ctx.fillStyle = '#1f2f3b';
+      ctx.fill();
+      // 顶羽（丹顶一点朱砂）
+      ctx.beginPath();
+      ctx.arc(headX - 1, headY - headRadius + 0.5, 1.8, 0, Math.PI * 2);
+      ctx.fillStyle = '#b91c1c';
+      ctx.fill();
+    }
 
     // Bamboo Hat for player or bosses
     if (options.isPlayer || options.enemyType === 'INK_BOSS') {
@@ -380,7 +523,7 @@ export class StickmanSkeleton {
     const lFootY = lKneeY + Math.cos(pose.leftThighAngle + pose.leftShinAngle) * legLen2;
 
     ctx.save();
-    ctx.strokeStyle = options.isPlayer ? '#2d2b28' : '#6b3226'; // slightly dimmer back leg
+    ctx.strokeStyle = palette.dim;
     ctx.beginPath();
     ctx.moveTo(hipX, hipY);
     ctx.lineTo(lKneeX, lKneeY);
@@ -408,7 +551,7 @@ export class StickmanSkeleton {
     const lHandY = lElbowY + Math.cos(pose.leftUpperArmAngle + pose.leftForearmAngle) * armLen2;
 
     ctx.save();
-    ctx.strokeStyle = options.isPlayer ? '#33312e' : '#7a4132';
+    ctx.strokeStyle = palette.limb;
     ctx.beginPath();
     ctx.moveTo(shoulderX, shoulderY);
     ctx.lineTo(lElbowX, lElbowY);
@@ -427,6 +570,42 @@ export class StickmanSkeleton {
     ctx.lineTo(rElbowX, rElbowY);
     ctx.lineTo(rHandX, rHandY);
     ctx.stroke();
+
+    // 4.5 墨盾武僧：门板大盾（举盾竖立身前，收盾背于身后）——画在武器层之前以覆盖躯干
+    if (options.enemyType === 'INK_SHIELD_GUARD') {
+      const syp = (hipY0 + shoulderY) / 2;
+      if (!options.shieldDown) {
+        ctx.save();
+        ctx.translate(13, syp + 4);
+        ctx.fillStyle = '#2f3640';
+        ctx.fillRect(-5, -20, 10, 40);
+        ctx.strokeStyle = '#1a1f27';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-5, -20, 10, 40);
+        ctx.fillStyle = '#6b7280';
+        ctx.beginPath();
+        ctx.arc(0, -12, 1.8, 0, Math.PI * 2);
+        ctx.arc(0, 12, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#9aa3ad';
+        ctx.font = "bold 9px 'Ma Shan Zheng', cursive";
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('盾', 0, 0.5);
+        ctx.restore();
+      } else {
+        // 收盾：破防窗口，盾斜背身后
+        ctx.save();
+        ctx.translate(-15, syp + 2);
+        ctx.rotate(-0.55);
+        ctx.fillStyle = '#3a424e';
+        ctx.fillRect(-4, -16, 8, 32);
+        ctx.strokeStyle = '#1a1f27';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(-4, -16, 8, 32);
+        ctx.restore();
+      }
+    }
 
     // 5. Weapon rendering
     ctx.save();
@@ -514,6 +693,22 @@ export class StickmanSkeleton {
       ctx.strokeStyle = '#1c1917';
       ctx.lineWidth = 7;
       ctx.stroke();
+    } else if (options.enemyType === 'INK_SUMMONER') {
+      // 妖笔长杖：斜握长杆 + 笔锋墨滴
+      ctx.beginPath();
+      ctx.moveTo(-8, 6);
+      ctx.lineTo(26, -10);
+      ctx.strokeStyle = '#27402c';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(26, -10, 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#1f3d2a';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(26, -10, 1.2, 0, Math.PI * 2);
+      ctx.fillStyle = '#7fb069';
+      ctx.fill();
     } else {
       // Dao blade
       ctx.beginPath();
@@ -525,6 +720,24 @@ export class StickmanSkeleton {
     }
 
     ctx.restore();
+
+    // 6. 符笔妖道：两片环绕符纸（时间驱动，ribbonPhase 由引擎传入 nowMs）
+    if (options.enemyType === 'INK_SUMMONER') {
+      const ph = options.ribbonPhase ?? 0;
+      for (let i = 0; i < 2; i++) {
+        const a = ph + i * Math.PI;
+        const ox = Math.cos(a) * 16;
+        const oy = -26 + Math.sin(a) * 7;
+        ctx.save();
+        ctx.translate(ox, oy);
+        ctx.rotate(Math.sin(a) * 0.4);
+        ctx.fillStyle = '#efe6cf';
+        ctx.fillRect(-2.5, -5, 5, 10);
+        ctx.fillStyle = '#b91c1c';
+        ctx.fillRect(-1.5, -1.5, 3, 3);
+        ctx.restore();
+      }
+    }
 
     ctx.restore();
   }

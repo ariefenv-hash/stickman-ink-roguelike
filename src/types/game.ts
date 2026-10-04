@@ -52,6 +52,13 @@ export interface Affix {
     thornsPercent?: number;       // 反伤：受击时反弹伤害比例
     critGainInk?: number;         // 暴击回复墨意
     dashStrikeEnabled?: boolean;  // 冲刺时对路径敌人造成伤害
+    // --- 觉醒/新敌词条 ---
+    skySlayerPercent?: number;        // 对浮空妖敌伤害提升
+    dodgeChancePercent?: number;      // 完全闪避敌人攻击的概率
+    awakeningGainBonus?: number;      // 觉醒充能速度提升
+    awakeningDamageBonus?: number;    // 觉醒技伤害提升
+    awakeningRadiusBonus?: number;    // 觉醒技范围扩大
+    awakeningOnWaveStart?: number;    // 每波开战直接获得觉醒充能
   };
 }
 
@@ -138,7 +145,18 @@ export interface PlayerEntity {
   reviveUsed: boolean;    // 残页复活是否已用
 }
 
-export type EnemyType = 'INK_MINION' | 'INK_ARCHER' | 'INK_BRUTE' | 'SHADOW_NINJA' | 'INK_BOSS';
+export type EnemyType =
+  | 'INK_MINION'      // 普通墨卒：基础近战
+  | 'INK_ARCHER'      // 墨羽弓手：远程箭矢
+  | 'INK_BRUTE'       // 巨力狂墨：重击坦克
+  | 'SHADOW_NINJA'    // 暗影刺客：瞬移背刺
+  | 'INK_BOMBER'      // 爆墨傀儡：自爆冲锋，爆炸伤及敌群
+  | 'INK_SHIELD_GUARD' // 墨盾武僧：正面持盾格挡
+  | 'INK_SUMMONER'    // 符笔妖道：远程召唤+追踪符珠
+  | 'INK_CRANE'       // 飞白鹤：空中盘旋俯冲，挑招可击落
+  | 'INK_TURTLE'      // 砚台龟：反震龟壳坦克，攻壳窗口反击
+  | 'INK_DRUNKARD'    // 醉墨剑客：摇摆闪避连斩，醉倒时破绽
+  | 'INK_BOSS';       // 墨煞宗师
 
 export interface EnemyEntity {
   id: string;
@@ -169,8 +187,17 @@ export interface EnemyEntity {
   bossSkills?: BossSkillState[];    // Boss 技能组
   bossPhase?: 1 | 2;                // Boss 阶段
   teleportCooldown?: number;        // 刺客瞬移冷却
+  turnCooldown?: number;            // 墨盾武僧转身迟缓计时（留绕背窗口）
   deathTimer?: number;              // 尸体消散计时
   spawnGrace?: number;              // 出生保护（淡入）
+  // --- 飞白鹤 ---
+  cranePhase?: 'HOVER' | 'DIVE' | 'PERCH'; // 飞行阶段（盘旋/俯冲/落地喘息）
+  craneTimer?: number;              // 阶段剩余时间
+  craneVX?: number;                 // 俯冲速度分量
+  craneVZ?: number;
+  // --- 醉墨剑客 ---
+  dodgeCooldown?: number;           // 侧身闪避冷却
+  swayPhase?: number;               // 醉步摇摆相位
 }
 
 export interface Projectile {
@@ -181,8 +208,10 @@ export interface Projectile {
   isPlayer: boolean;
   life: number;
   maxLife: number;
-  type: 'SWORD_BEAM' | 'INK_ARROW' | 'LIGHTNING' | 'INK_SHOCKWAVE' | 'BOSS_ORB' | 'CHAIN_BOLT';
+  type: 'SWORD_BEAM' | 'INK_ARROW' | 'LIGHTNING' | 'INK_SHOCKWAVE' | 'BOSS_ORB' | 'CHAIN_BOLT' | 'INK_TALISMAN';
   radius: number;
+  /** 追踪转向率（0~1，每帧朝目标修正速度方向的比例；仅敌方弹道生效） */
+  homing?: number;
   chainJumps?: number;   // 连锁闪电剩余跳跃
   hitIds?: Set<string>;  // 已命中目标（防重复）
 }

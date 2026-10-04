@@ -37,6 +37,8 @@ export default function App() {
   const [volume, setVolume] = useState<number>(80);
   const [recentGesture, setRecentGesture] = useState<GestureResult | null>(null);
   const [isPaused, setIsPaused] = useState<boolean>(false);
+  const [awakening, setAwakening] = useState<number>(0);
+  const [awakeningMax, setAwakeningMax] = useState<number>(100);
 
   // 波次大字横幅
   const [banner, setBanner] = useState<{ title: string; isBossWave: boolean; key: number } | null>(null);
@@ -120,6 +122,10 @@ export default function App() {
       onPauseChange: (paused) => {
         setIsPaused(paused);
       },
+      onAwakeningChange: (value, maxValue) => {
+        setAwakening(value);
+        setAwakeningMax(maxValue);
+      },
       onControlModeChange: (mode) => {
         setControlMode(mode);
       },
@@ -131,7 +137,8 @@ export default function App() {
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      engine.stop();
+      // destroy = stop + 移除全部引擎事件监听：防组件卸载后僵尸监听器持有整个引擎（内存泄漏）
+      engine.destroy();
     };
   }, []);
 
@@ -307,6 +314,9 @@ export default function App() {
           recentGesture={recentGesture}
           onTriggerMove={handleTriggerMove}
           onTriggerJump={() => engineRef.current?.triggerJump()}
+          onTriggerAwakening={() => engineRef.current?.triggerAwakening()}
+          awakening={awakening}
+          awakeningMax={awakeningMax}
           controlMode={controlMode}
           onToggleControlMode={handleToggleControlMode}
           onTogglePause={handleTogglePause}

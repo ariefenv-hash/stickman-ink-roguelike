@@ -126,6 +126,53 @@ export const ManualModal: React.FC<ManualModalProps> = ({ onClose }) => {
           </div>
         </div>
 
+        {/* 觉醒技提示条 */}
+        <div className="p-2.5 mb-4 bg-[#fdf6e3] rounded-lg border border-[#d9a844] flex items-start gap-2">
+          <Sparkles className="w-4 h-4 text-[#b45309] shrink-0 mt-0.5" />
+          <div className="text-[10px] font-ink-serif text-[#85745a] leading-relaxed">
+            <span className="text-[#b45309] font-semibold">觉醒技·万墨归宗</span>：命中与击杀积累觉醒槽，满槽后按 <strong className="text-[#b45309]">[G]</strong> 或点「觉」按钮释放全屏墨爆，重创周身所有妖敌（可击穿墨盾武僧的正面格挡），释放后短暂无敌——绝境反打的保命底牌！
+          </div>
+        </div>
+
+        {/* 妖墨图鉴 */}
+        <div className="mb-4">
+          <div className="text-xs font-ink-serif text-[#85745a] tracking-widest mb-2 text-center">
+            —— 妖墨图鉴 · 知彼方能破敌 ——
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="p-2.5 bg-[#f3e7d3] rounded-lg border border-[#d9b98a] flex items-start gap-2">
+              <div className="text-[10px] font-ink-serif text-[#85745a] leading-relaxed">
+                <span className="text-[#c2410c] font-semibold">爆墨傀儡</span>：焦褐圆肚高速冲锋，头顶亮「爆」即引信点燃——此刻速斩可<strong className="text-[#b45309]">「拆除」获额外功绩</strong>，或诱其自爆炸入敌阵！
+              </div>
+            </div>
+            <div className="p-2.5 bg-[#e8ebee] rounded-lg border border-[#9aa8b8] flex items-start gap-2">
+              <div className="text-[10px] font-ink-serif text-[#85745a] leading-relaxed">
+                <span className="text-[#475569] font-semibold">墨盾武僧</span>：铁灰武僧正面持盾，<strong className="text-[#475569]">正面格挡八成伤害</strong>（硬打仅两成透伤，多磨几盾也能击破）——绕至身后全额伤害，或趁其头顶亮「！」收盾出招时反击破防！
+              </div>
+            </div>
+            <div className="p-2.5 bg-[#e6ede4] rounded-lg border border-[#a3bfa0] flex items-start gap-2">
+              <div className="text-[10px] font-ink-serif text-[#85745a] leading-relaxed">
+                <span className="text-[#3d5a40] font-semibold">符笔妖道</span>：墨绿道袍远端施法，召唤墨卒护法并放出<strong className="text-[#3d5a40]">扇形追踪符珠</strong>（可走位甩开）——威胁最大，宜优先狙杀！
+              </div>
+            </div>
+            <div className="p-2.5 bg-[#dfe8ee] rounded-lg border border-[#8fb0c4] flex items-start gap-2">
+              <div className="text-[10px] font-ink-serif text-[#85745a] leading-relaxed">
+                <span className="text-[#2f4858] font-semibold">飞白鹤</span>：靛青白鹤高空盘旋，普通招式够不到！趁它头顶亮「袭」俯冲时走位躲开，落地喘息或用<strong className="text-[#2f4858]">「挑」招将它击落</strong>再打！
+              </div>
+            </div>
+            <div className="p-2.5 bg-[#e9e8e4] rounded-lg border border-[#a8a49b] flex items-start gap-2">
+              <div className="text-[10px] font-ink-serif text-[#85745a] leading-relaxed">
+                <span className="text-[#3b3a36] font-semibold">砚台龟</span>：背负砚台墨甲，龟甲竖起时受击会被<strong className="text-[#3b3a36]">反震 22% 伤害</strong>——趁它头顶亮「震」伸头出招时猛攻，或用反伤/觉醒技对付它！
+              </div>
+            </div>
+            <div className="p-2.5 bg-[#f0e4e8] rounded-lg border border-[#c4a3b0] flex items-start gap-2">
+              <div className="text-[10px] font-ink-serif text-[#85745a] leading-relaxed">
+                <span className="text-[#5b2333] font-semibold">醉墨剑客</span>：酒褐剑客醉步摇摆逼近，挥击有 35% 概率被<strong className="text-[#5b2333]">「醉避」</strong>闪开——趁它头顶亮「斩」出招后或「醉倒」踉跄时全力输出！
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* 6 Gesture Cards Scrollable */}
         <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 mb-4">
           {moves.map((move) => (

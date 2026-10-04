@@ -59,6 +59,8 @@ export interface GameEngineCallbacks {
   onGameOver: (stats: RunStats, isVictory: boolean) => void;
   onPauseChange: (paused: boolean) => void;
   onControlModeChange?: (mode: ControlMode) => void;
+  /** 觉醒槽变化（0~100，满槽可释放「万墨归宗」） */
+  onAwakeningChange?: (value: number, maxValue: number) => void;
 }
 
 export class GameEngine {
@@ -89,6 +91,11 @@ export class GameEngine {
   private screenWidth: number = 1200;
   private screenHeight: number = 700;
   private dpr: number = 1;
+
+  // 觉醒技「万墨归宗」：命中/击杀充能，满槽释放全屏墨爆
+  private awakening: number = 0;
+  private readonly awakeningMax: number = 100;
+  private lastAwakeningEmitted: number = -1;
 
   // Player
   public player: PlayerEntity;
@@ -169,6 +176,11 @@ export class GameEngine {
   public endlessMode: boolean = false;
   public difficulty: Difficulty = 'NORMAL';
 
+  // 同屏存活妖墨上限：无尽模式后期防生成堆积压垮帧率（Boss 本体不受限）
+  private readonly maxAliveEnemies = 22;
+  // 暂停/结算时画面静止，仅在标记脏时重绘一帧（防移动端持续满帧渲染发热降频→卡顿）
+  private renderDirty: boolean = true;
+
   // Run statistics (结算统计)
   private runStartTime: number = performance.now();
   private runStats: RunStats = {
@@ -230,6 +242,7 @@ export class GameEngine {
     this.bgImage.src = bgImg;
     this.bgImage.onload = () => {
       this.bgLoaded = true;
+      this.renderDirty = true;
     };
   }
 
@@ -244,6 +257,7 @@ export class GameEngine {
     this.canvas.style.height = `${h}px`;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.invalidateLayerCaches();
+    this.renderDirty = true;
   }
 
   /** 尺寸/DPR 变化时作废全部离屏图层缓存（懒重建） */
@@ -377,6 +391,7 @@ export class GameEngine {
     if (this.particles.length > this.particleCap) {
       this.particles.splice(0, this.particles.length - this.particleCap);
     }
+    this.renderDirty = true;
   }
 
   public start() {
@@ -392,10 +407,24 @@ export class GameEngine {
     this.isRunning = false;
     this.resetTouches();
     sound.stopHeartbeat();
+    sound.stopAmbientBgm();
     if (this.animFrameId !== null) {
       cancelAnimationFrame(this.animFrameId);
       this.animFrameId = null;
     }
+  }
+
+  /** 彻底销毁引擎：移除全部事件监听并停止循环（防卸载后僵尸监听器持有引擎致内存泄漏） */
+  public destroy() {
+    this.stop();
+    for (const fn of this.eventCleanupFns) {
+      try {
+        fn();
+      } catch {
+        // 清理异常不阻断后续清理
+      }
+    }
+    this.eventCleanupFns.length = 0;
   }
 
   /** 暂停/继续（ESC 或按钮），战斗中才可暂停 */
@@ -405,7 +434,11 @@ export class GameEngine {
     if (this.isPaused) {
       this.resetTouches();
       sound.stopHeartbeat();
+      sound.stopAmbientBgm();
+    } else {
+      sound.startAmbientBgm();
     }
+    this.renderDirty = true;
     this.callbacks.onPauseChange(this.isPaused);
     return this.isPaused;
   }
@@ -431,6 +464,8 @@ export class GameEngine {
     this.endlessMode = true;
     this.runEnded = false;
     this.isPaused = false;
+    sound.startAmbientBgm();
+    this.renderDirty = true;
     this.callbacks.onPauseChange(false);
     this.startWave(this.wave + 1);
   }
@@ -538,9 +573,13 @@ export class GameEngine {
     this.lastInkEmitted = -1;
     this.lastShieldEmitted = -1;
     this.lastBossEmitted = '';
+    this.awakening = 0;
+    this.emitAwakening(true);
     this.runStartTime = performance.now(); // 重置生存计时
     this.callbacks.onBossUpdate(null);
     sound.stopHeartbeat();
+    sound.startAmbientBgm(); // 重开恢复 BGM（暂停期间已停）
+    this.renderDirty = true;
     // 状态全量同步给 UI（修复重开后血条/墨条残留旧值）
     this.emitHp();
     this.emitInk();
@@ -564,6 +603,77 @@ export class GameEngine {
     const comboMult = 1 + Math.min(50, this.player.comboCount) * 0.02;
     this.score += Math.round(base * comboMult);
     this.runStats.score = this.score;
+  }
+
+  // --- 觉醒技「万墨归宗」 ---
+
+  /** 觉醒充能：命中/击杀积累，词条加速 */
+  private gainAwakening(base: number) {
+    if (this.runEnded || this.awakening >= this.awakeningMax) return;
+    const gainMult = 1 + this.sumStat('awakeningGainBonus') / 100;
+    this.awakening = Math.min(this.awakeningMax, this.awakening + base * gainMult);
+    this.emitAwakening();
+  }
+
+  private emitAwakening(force: boolean = false) {
+    if (!this.callbacks.onAwakeningChange) return;
+    const val = Math.floor(this.awakening);
+    if (!force && val === this.lastAwakeningEmitted) return;
+    this.lastAwakeningEmitted = val;
+    this.callbacks.onAwakeningChange(val, this.awakeningMax);
+  }
+
+  /** 满槽释放「万墨归宗」：全屏墨爆 + 短暂无敌 + 慢镜演出（G 键 / HUD 觉醒按钮） */
+  public triggerAwakening() {
+    const player = this.player;
+    if (this.isPaused || this.runEnded || player.hp <= 0) return;
+    if (this.awakening < this.awakeningMax) {
+      this.addFloatingText('觉醒未满', player.pos.x, player.pos.y + 85, '#9ca3af', 1.0);
+      return;
+    }
+
+    this.awakening = 0;
+    this.emitAwakening(true);
+
+    // 演出：慢镜 + 镜头冲击 + 屏缘泼墨 + 双激波 + 大字
+    this.triggerSlowMo(0.55);
+    this.triggerZoomPunch(0.06);
+    this.triggerInkEdge(0.6);
+    this.cameraShake = Math.max(this.cameraShake, 20);
+    const R = 340 * (1 + this.sumStat('awakeningRadiusBonus') / 100);
+    this.spawnShockRing(player.pos.x, player.pos.z, 14, R, 0.75, '#1a1611', 5);
+    this.spawnShockRing(player.pos.x, player.pos.z, 8, R * 0.62, 0.5, '#b91c1c', 4);
+    this.spawnInkBurst(player.pos, 40, '#171513');
+    this.spawnInkBurst(player.pos, 22, '#b91c1c');
+    this.addCrackDecal(player.pos, 1.6);
+    this.addSplatDecal(player.pos, 1.8, '#1a1611', 9);
+    this.addFloatingText('『万墨归宗』', player.pos.x, player.pos.y + 100, '#fbbf24', 2.0, true, true);
+    sound.playCalligraphyGong('万墨归宗');
+    sound.playBossWarn();
+
+    // 全域墨浪伤害 + 击退硬直
+    const ultMult = 1 + this.sumStat('awakeningDamageBonus') / 100;
+    const baseDmg = Math.round(90 * this.getAffixDamageMultiplier() * ultMult);
+    for (const enemy of this.enemies) {
+      if (enemy.hp <= 0) continue;
+      const d = Math.hypot(enemy.pos.x - player.pos.x, enemy.pos.z - player.pos.z);
+      if (d > R) continue;
+      const dirX = (enemy.pos.x - player.pos.x) / (d || 1);
+      const dirZ = (enemy.pos.z - player.pos.z) / (d || 1);
+      enemy.vel.x = dirX * 16;
+      enemy.vel.z = dirZ * 8;
+      enemy.hitStun = Math.max(enemy.hitStun, 0.95);
+      enemy.maxHitStun = enemy.hitStun;
+      this.spawnInkBurst(enemy.pos, 8, '#171513');
+      // 觉醒墨浪全方位冲击：绕过墨盾武僧正面格挡，全额结算
+      this.damageEnemy(enemy, baseDmg, Math.random() < 0.3, 0.6, false, true);
+    }
+
+    // 释放后短暂无敌 + 墨意回补，鼓励绝境反打
+    player.isInvincible = true;
+    player.invincibleTimer = Math.max(player.invincibleTimer, 1.0);
+    player.ink = Math.min(player.maxInk, player.ink + 20);
+    this.emitInk();
   }
 
   // --- WAVE CONFIGURATION ---
@@ -593,6 +703,24 @@ export class GameEngine {
     } else if (waveNum === 4) {
       title += '暗影无极';
       count = 11;
+    } else if (waveNum === 6) {
+      title += '墨盾结阵';
+      count = 14;
+    } else if (waveNum === 7) {
+      title += '爆墨焚野';
+      count = 17;
+    } else if (waveNum === 8) {
+      title += '妖道符召';
+      count = 20;
+    } else if (waveNum === 9) {
+      title += '鹤噪墨空';
+      count = 22;
+    } else if (waveNum === 10) {
+      title += '砚甲横江';
+      count = 24;
+    } else if (waveNum === 11) {
+      title += '醉剑狂歌';
+      count = 26;
     } else if (waveNum === VICTORY_WAVE) {
       title += '墨煞大帝 · 终折';
       count = 3 + Math.floor(waveNum / 2);
@@ -607,7 +735,13 @@ export class GameEngine {
     }
 
     this.waveTitle = title;
-    this.totalEnemiesInWave = count;
+    // 玄武镇岳：每波开战直接获得觉醒充能
+    const waveStartAwakening = this.sumStat('awakeningOnWaveStart');
+    if (waveStartAwakening > 0 && waveNum > 1) {
+      this.gainAwakening(waveStartAwakening);
+    }
+    // 无尽模式后期波次数量软上限：压力靠敌种构成而非无界数量（防生成/清理失衡堆场）
+    this.totalEnemiesInWave = Math.min(count, 42);
 
     // 凝墨为甲：波次开始时获得墨盾
     const shieldGain = this.player.affixes.reduce((s, a) => s + (a.stats.shieldOnWaveStart ?? 0), 0);
@@ -648,22 +782,61 @@ export class GameEngine {
     }
   }
 
-  private spawnNextEnemy() {
-    if (this.enemiesSpawnedInWave >= this.totalEnemiesInWave) return;
+  private spawnNextEnemy(): boolean {
+    if (this.enemiesSpawnedInWave >= this.totalEnemiesInWave) return true;
+
+    const isBossWave = this.wave % 5 === 0 || this.wave === VICTORY_WAVE;
+    // Boss 本体豁免同屏上限（否则 Boss 波开场即被拥挤保护卡住）
+    const willBeBoss = isBossWave && this.enemiesSpawnedInWave === 0;
+
+    // 同屏拥挤保护：存活妖墨达上限时推迟生成（不消耗波次配额，防无尽后期堆积压垮帧率→卡死）
+    if (!willBeBoss) {
+      let alive = 0;
+      for (let i = 0; i < this.enemies.length; i++) {
+        if (this.enemies[i].hp > 0) alive++;
+      }
+      if (alive >= this.maxAliveEnemies) return false;
+    }
 
     this.enemiesSpawnedInWave++;
-    const isBossWave = this.wave % 5 === 0 || this.wave === VICTORY_WAVE;
     const isBoss = isBossWave && this.enemiesSpawnedInWave === 1;
 
     let type: EnemyType = 'INK_MINION';
     if (isBoss) {
       type = 'INK_BOSS';
-    } else if (this.wave >= 2 && Math.random() < 0.35) {
-      type = 'INK_ARCHER';
-    } else if (this.wave >= 3 && Math.random() < 0.25) {
-      type = 'INK_BRUTE';
-    } else if (this.wave >= 4 && Math.random() < 0.3) {
-      type = 'SHADOW_NINJA';
+    } else {
+      // 加权生成池：随折数逐步解锁新妖墨（机制互补：近战/远程/重击/背刺/自爆/格挡/召唤）
+      const pool: { type: EnemyType; w: number }[] = [{ type: 'INK_MINION', w: 10 }];
+      if (this.wave >= 2) pool.push({ type: 'INK_ARCHER', w: 6 });
+      if (this.wave >= 3) pool.push({ type: 'INK_BRUTE', w: 4.5 });
+      if (this.wave >= 4) pool.push({ type: 'SHADOW_NINJA', w: 5 });
+      if (this.wave >= 5) pool.push({ type: 'INK_BOMBER', w: 4 });
+      if (this.wave >= 6) pool.push({ type: 'INK_SHIELD_GUARD', w: 4 });
+      if (this.wave >= 8) pool.push({ type: 'INK_SUMMONER', w: 3 });
+      if (this.wave >= 9) pool.push({ type: 'INK_CRANE', w: 3.5 });
+      if (this.wave >= 10) pool.push({ type: 'INK_TURTLE', w: 3 });
+      if (this.wave >= 11) pool.push({ type: 'INK_DRUNKARD', w: 3.5 });
+      // 符笔妖道同屏至多一位（超出则回退墨卒，避免召唤海啸）；砚台龟同理（反震坦克堆场拖慢节奏）
+      let filtered = pool;
+      if (this.enemies.some((e) => e.type === 'INK_SUMMONER' && e.hp > 0)) {
+        filtered = filtered.filter((p) => p.type !== 'INK_SUMMONER');
+      }
+      if (this.enemies.some((e) => e.type === 'INK_TURTLE' && e.hp > 0)) {
+        filtered = filtered.filter((p) => p.type !== 'INK_TURTLE');
+      }
+      // 飞白鹤同屏至多两只（俯冲压制过重）
+      if (this.enemies.filter((e) => e.type === 'INK_CRANE' && e.hp > 0).length >= 2) {
+        filtered = filtered.filter((p) => p.type !== 'INK_CRANE');
+      }
+      const totalW = filtered.reduce((s, p) => s + p.w, 0);
+      let roll = Math.random() * totalW;
+      for (const p of filtered) {
+        roll -= p.w;
+        if (roll <= 0) {
+          type = p.type;
+          break;
+        }
+      }
     }
 
     // Spawn from left or right edge of pseudo-3D arena
@@ -682,6 +855,24 @@ export class GameEngine {
     }
 
     this.spawnEnemyAt(type, spawnX, spawnZ, isBoss, elite);
+    return true;
+  }
+
+  /** 敌人显示名 */
+  private enemyDisplayName(type: EnemyType, isBoss: boolean): string {
+    if (isBoss) return '墨煞宗师';
+    switch (type) {
+      case 'INK_BRUTE': return '巨力狂墨';
+      case 'SHADOW_NINJA': return '暗影刺客';
+      case 'INK_ARCHER': return '墨羽弓手';
+      case 'INK_BOMBER': return '爆墨傀儡';
+      case 'INK_SHIELD_GUARD': return '墨盾武僧';
+      case 'INK_SUMMONER': return '符笔妖道';
+      case 'INK_CRANE': return '飞白鹤';
+      case 'INK_TURTLE': return '砚台龟';
+      case 'INK_DRUNKARD': return '醉墨剑客';
+      default: return '普通墨卒';
+    }
   }
 
   private spawnEnemyAt(type: EnemyType, spawnX: number, spawnZ: number, isBoss: boolean = false, elite: EliteInfo | null = null) {
@@ -698,6 +889,34 @@ export class GameEngine {
       hp = 60 + this.wave * 10;
       damage = 18 + this.wave * 3;
       scale = 0.95;
+    } else if (type === 'INK_BOMBER') {
+      // 脆皮高速，爆炸伤害高（伤及敌群可借刀杀人）
+      hp = 32 + this.wave * 7;
+      damage = 26 + this.wave * 4;
+      scale = 0.92;
+    } else if (type === 'INK_SHIELD_GUARD') {
+      hp = 115 + this.wave * 22;
+      damage = 20 + this.wave * 3;
+      scale = 1.15;
+    } else if (type === 'INK_SUMMONER') {
+      hp = 60 + this.wave * 10;
+      damage = 13 + this.wave * 2; // 追踪符珠单发伤害
+      scale = 1.0;
+    } else if (type === 'INK_CRANE') {
+      // 飞白鹤：空中盘旋俯冲，落地喘息时是最佳输出窗口
+      hp = 55 + this.wave * 11;
+      damage = 20 + this.wave * 3;
+      scale = 0.95;
+    } else if (type === 'INK_TURTLE') {
+      // 砚台龟：反震龟壳坦克，慢速高血
+      hp = 180 + this.wave * 30;
+      damage = 22 + this.wave * 3;
+      scale = 1.28;
+    } else if (type === 'INK_DRUNKARD') {
+      // 醉墨剑客：摇摆闪避，近身连斩
+      hp = 70 + this.wave * 13;
+      damage = 16 + this.wave * 3;
+      scale = 1.0;
     } else if (type === 'INK_BOSS') {
       hp = 450 + this.wave * 80;
       damage = 35 + this.wave * 5;
@@ -721,7 +940,7 @@ export class GameEngine {
     const enemy: EnemyEntity = {
       id: Math.random().toString(),
       type,
-      name: (elite ? `${elite.name}·` : '') + (isBoss ? '墨煞宗师' : type === 'INK_BRUTE' ? '巨力狂墨' : type === 'SHADOW_NINJA' ? '暗影刺客' : type === 'INK_ARCHER' ? '墨羽弓手' : '普通墨卒'),
+      name: (elite ? `${elite.name}·` : '') + this.enemyDisplayName(type, isBoss),
       pos: { x: spawnX, y: 0, z: spawnZ },
       vel: { x: 0, y: 0, z: 0 },
       facing: spawnX > this.player.pos.x ? -1 : 1,
@@ -746,7 +965,17 @@ export class GameEngine {
       deathTimer: 0,
       spawnGrace: 0.6,
       bossPhase: isBoss ? 1 : undefined,
+      // 三新敌专属初始化
+      cranePhase: type === 'INK_CRANE' ? 'HOVER' : undefined,
+      craneTimer: type === 'INK_CRANE' ? 1.0 + Math.random() * 1.5 : undefined,
+      dodgeCooldown: type === 'INK_DRUNKARD' ? 1.2 : undefined,
+      swayPhase: type === 'INK_DRUNKARD' ? Math.random() * Math.PI * 2 : undefined,
     };
+    // 飞白鹤从空中入场（y 重力在 AI 分支内显式接管）
+    if (type === 'INK_CRANE') {
+      enemy.pos.y = 74;
+      enemy.isAirborne = true;
+    }
 
     if (isBoss) {
       enemy.bossSkills = [
@@ -791,6 +1020,9 @@ export class GameEngine {
         this.triggerGestureDirect('ZIGZAG');
       } else if (e.code === 'Space' || e.key.toLowerCase() === 'k') {
         this.triggerJump();
+      } else if (e.key.toLowerCase() === 'g') {
+        // 觉醒技「万墨归宗」：满槽释放全屏墨爆
+        this.triggerAwakening();
       }
     };
 
@@ -862,6 +1094,8 @@ export class GameEngine {
       // Drawing pointer adds brush stroke points and updates slide target
       else if (e.pointerId === this.drawPointerId) {
         if (this.isDrawingStroke) {
+          // 长拖拽保护：笔迹超限时淘汰最旧四分之一（防内存与识别耗时无界增长）
+          if (this.activeStroke.length >= 320) this.activeStroke.splice(0, 80);
           this.activeStroke.push({ x, y, t: performance.now() });
           if (this.controlMode === 'FULL_GESTURE') {
             const worldPos = this.unproject(x, y);
@@ -916,11 +1150,26 @@ export class GameEngine {
       }
     };
 
+    // 移动端切后台（visibilitychange 比 blur 更可靠，iOS Safari 切后台常不触发 blur）：
+    // 隐藏时自动暂停 + 释放触点；回前台时重置时间基准并唤醒音频（防大帧跳变与 AudioContext 挂起）
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        this.resetTouches();
+        if (this.isRunning && this.hasStartedRun && !this.isPaused && !this.runEnded) {
+          this.togglePause();
+        }
+      } else {
+        this.lastTime = performance.now();
+        sound.unlock();
+      }
+    };
+
     this.canvas.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerCancel);
     window.addEventListener('blur', onWindowBlur);
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     this.eventCleanupFns.push(() => {
       this.canvas.removeEventListener('pointerdown', onPointerDown);
@@ -928,6 +1177,7 @@ export class GameEngine {
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerCancel);
       window.removeEventListener('blur', onWindowBlur);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     });
   }
 
@@ -1477,6 +1727,7 @@ export class GameEngine {
           knockbackX: player.facing * 4,
           knockbackY: 13, // High aerial launch!
           isGesture: true,
+          antiAir: true, // 「挑」是唯一常规对空手段，可击落悬停飞白鹤
         });
         break;
       }
@@ -1661,6 +1912,7 @@ export class GameEngine {
     knockbackX: number;
     knockbackY: number;
     isGesture?: boolean;
+    antiAir?: boolean; // 挑招对空：可命中高空悬停的飞白鹤
   }) {
     const player = this.player;
     let hitCount = 0;
@@ -1672,14 +1924,36 @@ export class GameEngine {
       const dy = Math.abs(enemy.pos.y - player.pos.y);
 
       // Hitbox is ahead of player in facing direction, within Z depth and Y height
-      if (dx > -20 && dx < opts.rangeX && dz < opts.rangeZ && dy < 45) {
+      // 对空规则：普通招式够不到高空（dy<45），「挑」可击落悬停的飞白鹤（dy<115）
+      const dyLimit = opts.antiAir ? 115 : 45;
+      if (dx > -20 && dx < opts.rangeX && dz < opts.rangeZ && dy < dyLimit) {
+        // 醉墨剑客：醉步侧闪——非前摇/硬直/出招中 35% 概率瞬间侧移避开挥击（冷却 2.2s）
+        if (
+          enemy.type === 'INK_DRUNKARD' &&
+          (enemy.dodgeCooldown ?? 0) <= 0 &&
+          enemy.hitStun <= 0 &&
+          enemy.state !== 'WINDUP' && !enemy.state.startsWith('ATTACK')
+        ) {
+          if (Math.random() < 0.35) {
+            const side = Math.random() < 0.5 ? 1 : -1;
+            enemy.pos.x -= player.facing * 55;
+            enemy.pos.z = Math.max(-140, Math.min(140, enemy.pos.z + side * 52));
+            enemy.dodgeCooldown = 2.2;
+            this.spawnSpeedLines(enemy.pos, 6, '#5b2333');
+            this.addFloatingText('醉避', enemy.pos.x, enemy.pos.y + 58, '#5b2333', 1.15);
+            continue; // 完全避开这一击（不计 hitCount，不触发命中停帧）
+          }
+        }
+
         hitCount++;
         enemy.vel.x = opts.knockbackX;
         enemy.vel.y = opts.knockbackY;
 
-        // Base damage formula（手势词条加成生效）
+        // Base damage formula（手势词条加成生效；鹤唳九天对浮空妖敌增伤）
         const gestureMult = opts.isGesture ? this.getGestureDamageMultiplier() : 1.0;
-        const baseDmg = 24 * opts.damageMultiplier * this.getAffixDamageMultiplier() * gestureMult;
+        const skyBonus = enemy.pos.y > 30 ? this.sumStat('skySlayerPercent') : 0;
+        const airMult = 1 + skyBonus / 100;
+        const baseDmg = 24 * opts.damageMultiplier * this.getAffixDamageMultiplier() * gestureMult * airMult;
 
         // Crit check
         let critChance = 0.15;
@@ -1693,6 +1967,9 @@ export class GameEngine {
 
         // Lifesteal affix
         this.applyLifesteal(finalDmg);
+
+        // 觉醒充能：命中积累（暴击额外加成）
+        this.gainAwakening(isCrit ? 4.5 : 2.5);
       }
     }
 
@@ -1725,11 +2002,39 @@ export class GameEngine {
     }
   }
 
-  private damageEnemy(enemy: EnemyEntity, damage: number, isCrit: boolean = false, stunOverride?: number, isGesture: boolean = false) {
+  private damageEnemy(enemy: EnemyEntity, damage: number, isCrit: boolean = false, stunOverride?: number, isGesture: boolean = false, bypassShield: boolean = false) {
     if (enemy.hp <= 0) return;
     const player = this.player;
 
+    // 拆除判定：爆墨傀儡引信期间被击杀 → 无爆炸 + 额外功绩
+    const wasPriming = enemy.type === 'INK_BOMBER' && (enemy.windupTimer ?? 0) > 0;
+
+    // 墨盾武僧：正面持盾格挡 80% 伤害（收盾出招/受击硬直时可破防，绕背攻击全额有效）
+    // 正面硬打仍有 20% 透伤可缓慢磨血——但格挡不触发硬直/打断/词条特效，武僧保持推进压力
+    // 觉醒墨浪等全方位冲击可绕盾（bypassShield）
+    if (!bypassShield && enemy.type === 'INK_SHIELD_GUARD' && enemy.hp > 0 && this.isShieldRaised(enemy)) {
+      const fromFront = (player.pos.x - enemy.pos.x) * enemy.facing >= -12;
+      if (fromFront) {
+        const chipped = Math.max(1, Math.round(damage * 0.2));
+        enemy.hp -= chipped;
+        this.spawnInkBurst({ x: enemy.pos.x + enemy.facing * 18, y: 30, z: enemy.pos.z }, 8, '#64748b');
+        this.addFloatingText(`格挡 · ${chipped}`, enemy.pos.x, enemy.pos.y + 55, '#64748b', 1.1);
+        sound.playHit(false);
+        if (enemy.hp <= 0) this.killEnemy(enemy); // 正面磨血致死走正常死亡结算
+        return;
+      }
+    }
+
     enemy.hp -= damage;
+
+    // 砚台龟：龟甲反震——龟甲竖起（非前摇/硬直）时受击，将 22% 伤害震回进攻方
+    // 不带 source：避免与玩家铁画银钩反伤互相递归；觉醒释放后的无敌帧可免疫反震
+    if (enemy.type === 'INK_TURTLE' && enemy.hp > 0 && this.isShieldRaised(enemy)) {
+      const reflect = Math.max(1, Math.round(damage * 0.22));
+      this.spawnInkBurst({ x: player.pos.x, y: player.pos.y + 20, z: player.pos.z }, 5, '#3b3a36');
+      this.addFloatingText('反震', player.pos.x, player.pos.y + 48, '#3b3a36', 1.15);
+      this.hurtPlayer(reflect, player.pos.x >= enemy.pos.x ? 1 : -1, undefined);
+    }
 
     // 朱砂焚意：命中附加灼烧 DoT
     const burnFactor = this.sumStat('burnOnHit');
@@ -1809,6 +2114,10 @@ export class GameEngine {
     // Enemy Death / 判官处决
     if (enemy.hp <= 0) {
       this.killEnemy(enemy);
+      if (wasPriming) {
+        this.addScore(80);
+        this.addFloatingText('『拆除 +80』', enemy.pos.x, enemy.pos.y + 72, '#fbbf24', 1.4, true);
+      }
       return;
     }
 
@@ -1820,7 +2129,62 @@ export class GameEngine {
       this.spawnInkBurst(enemy.pos, 20, '#b91c1c');
       sound.playCalligraphyGong('判');
       this.killEnemy(enemy);
+      if (wasPriming) {
+        this.addScore(80);
+        this.addFloatingText('『拆除 +80』', enemy.pos.x, enemy.pos.y + 90, '#fbbf24', 1.4, true);
+      }
     }
+  }
+
+  /** 墨盾武僧：盾牌是否举起（出招前摇/受击硬直/死亡时收盾=破防窗口） */
+  private isShieldRaised(enemy: EnemyEntity): boolean {
+    if (enemy.hp <= 0 || enemy.hitStun > 0) return false;
+    return enemy.state !== 'WINDUP' && !enemy.state.startsWith('ATTACK');
+  }
+
+  /** 爆墨傀儡：引信烧尽自爆——对玩家与其他妖墨均判定（可借傀儡炸敌群） */
+  private explodeBomber(enemy: EnemyEntity) {
+    const player = this.player;
+    const R = 110;
+
+    // 爆炸演出：双激波 + 地裂 + 溅墨 + 镜头冲击
+    this.cameraShake = Math.max(this.cameraShake, 18);
+    this.triggerZoomPunch(0.045);
+    this.spawnInkBurst(enemy.pos, 30, '#ea580c');
+    this.spawnInkBurst(enemy.pos, 18, '#221a12');
+    this.spawnShockRing(enemy.pos.x, enemy.pos.z, 10, R + 30, 0.55, '#f97316', 4);
+    this.spawnShockRing(enemy.pos.x, enemy.pos.z, 6, R, 0.4, '#1a1611', 3);
+    this.addCrackDecal(enemy.pos, 1.2);
+    this.addSplatDecal(enemy.pos, 1.3, '#7c2d12', 8);
+    sound.playHit(true);
+
+    // 玩家判定
+    if (
+      !player.isInvincible && player.hp > 0 &&
+      Math.hypot(player.pos.x - enemy.pos.x, player.pos.z - enemy.pos.z) < R
+    ) {
+      this.hurtPlayer(enemy.damage, player.pos.x >= enemy.pos.x ? 1 : -1, enemy);
+      this.addFloatingText('爆墨！', enemy.pos.x, 70, '#f97316', 1.5, true);
+    }
+
+    // 敌我无差别（战术窗口：诱爆敌阵）
+    for (const other of this.enemies) {
+      if (other === enemy || other.hp <= 0) continue;
+      if (Math.hypot(other.pos.x - enemy.pos.x, other.pos.z - enemy.pos.z) < R) {
+        other.hp -= Math.round(enemy.damage * 1.1);
+        if (other.hp <= 0) {
+          const otherPriming = other.type === 'INK_BOMBER' && (other.windupTimer ?? 0) > 0;
+          this.killEnemy(other);
+          if (otherPriming) {
+            this.addScore(80);
+            this.addFloatingText('『拆除 +80』', other.pos.x, other.pos.y + 72, '#fbbf24', 1.4, true);
+          }
+        }
+      }
+    }
+
+    // 自身殒命（引信已烧尽，不算拆除）
+    this.killEnemy(enemy);
   }
 
   private killEnemy(enemy: EnemyEntity) {
@@ -1829,6 +2193,7 @@ export class GameEngine {
     enemy.stateTimer = 0;
     enemy.deathTimer = 0.9; // 尸体 0.9s 后消散（修复永不消失的泄漏）
     this.enemyWalkCycleCache.delete(enemy.id);
+    this.gainAwakening(6); // 觉醒充能：击杀奖励
 
     this.enemiesKilledInWave++;
     this.runStats.kills++;
@@ -2169,13 +2534,18 @@ export class GameEngine {
       } else {
         this.update(dt);
       }
+
+      // 慢动作视觉权重平滑（墨帘淡入淡出）
+      const slowTarget = this.slowMotionTimer > 0 ? 1 : 0;
+      this.slowMoVis += (slowTarget - this.slowMoVis) * Math.min(1, dt * (slowTarget ? 16 : 5));
+
+      this.render();
+    } else if (this.renderDirty) {
+      // 暂停/结算画面静止：仅在脏标记时重绘一帧（移动端防持续满帧渲染发热→降频卡顿）
+      this.renderDirty = false;
+      this.render();
     }
 
-    // 慢动作视觉权重平滑（墨帘淡入淡出）
-    const slowTarget = this.slowMotionTimer > 0 ? 1 : 0;
-    this.slowMoVis += (slowTarget - this.slowMoVis) * Math.min(1, dt * (slowTarget ? 16 : 5));
-
-    this.render();
     this.animFrameId = requestAnimationFrame(this.loop);
   };
 
@@ -2380,8 +2750,11 @@ export class GameEngine {
     if (this.enemiesSpawnedInWave < this.totalEnemiesInWave) {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0) {
-        this.spawnNextEnemy();
         this.spawnTimer = (1.8 + Math.random() * 1.5) * DIFFICULTY_TUNING[this.difficulty].spawnRate;
+        if (!this.spawnNextEnemy()) {
+          // 场面拥挤：短暂延迟后再试（波次配额未消耗）
+          this.spawnTimer = 0.75;
+        }
       }
     } else if (this.enemies.every((e) => e.hp <= 0) && !this.isWaveClearing) {
       // Wave Cleared!
@@ -2492,19 +2865,61 @@ export class GameEngine {
         enemy.attackCooldown -= dt * slowFactor;
       }
 
-      // Face player
-      enemy.facing = enemy.pos.x < player.pos.x ? 1 : -1;
+      // Face player（墨盾武僧转身迟缓：0.55s 一转，配合踏影瞬杀留出绕背破防窗口）
+      if (enemy.type === 'INK_SHIELD_GUARD') {
+        enemy.turnCooldown = (enemy.turnCooldown ?? 0) - dt;
+        if ((enemy.turnCooldown ?? 0) <= 0) {
+          enemy.facing = enemy.pos.x < player.pos.x ? 1 : -1;
+          enemy.turnCooldown = 0.55;
+        }
+      } else {
+        enemy.facing = enemy.pos.x < player.pos.x ? 1 : -1;
+      }
 
       const dx = player.pos.x - enemy.pos.x;
       const dz = player.pos.z - enemy.pos.z;
       const dist = Math.hypot(dx, dz);
 
-      // 攻击前摇结算：蓄力完成后才真正出手
+      // 攻击前摇结算：蓄力完成后才真正出手（爆墨傀儡引信烧尽则自爆）
       if ((enemy.windupTimer ?? 0) > 0) {
         enemy.windupTimer = (enemy.windupTimer ?? 0) - dt * slowFactor;
         enemy.stateTimer += dt;
+        // 飞白鹤前摇期间保持悬停高度（抵消重力急坠，蓄力后俯冲）
+        if (enemy.type === 'INK_CRANE') {
+          enemy.vel.y = 0;
+          enemy.pos.y += (74 - enemy.pos.y) * Math.min(1, dt * 4);
+        }
         if ((enemy.windupTimer ?? 0) <= 0) {
-          this.enemyMeleeStrike(enemy);
+          if (enemy.type === 'INK_BOMBER') {
+            this.explodeBomber(enemy);
+          } else if (enemy.type === 'INK_CRANE') {
+            // 飞白鹤：俯冲起飞——锁定玩家当前位置为落点方向
+            const dDive = Math.max(1, Math.hypot(dx, dz));
+            enemy.cranePhase = 'DIVE';
+            enemy.craneVX = (dx / dDive) * 430;
+            enemy.craneVZ = (dz / dDive) * 265;
+            enemy.state = 'ATTACK_DASH';
+            enemy.stateTimer = 0;
+            enemy.stateDuration = 1.2;
+            sound.playSlash('light');
+          } else {
+            this.enemyMeleeStrike(enemy);
+            if (enemy.type === 'INK_DRUNKARD' && enemy.hp > 0) {
+              // 醉墨剑客二连斩：0.28s 后回手一剑，随后醉倒踉跄（破绽窗口）
+              this.schedule(0.28, () => {
+                if (enemy.hp <= 0 || this.runEnded) return;
+                this.enemyMeleeStrike(enemy);
+              });
+              this.schedule(0.52, () => {
+                if (enemy.hp <= 0 || this.runEnded) return;
+                enemy.hitStun = Math.max(enemy.hitStun, 0.7);
+                enemy.maxHitStun = enemy.hitStun;
+                enemy.state = 'HURT';
+                enemy.stateTimer = 0;
+                this.addFloatingText('醉倒', enemy.pos.x, enemy.pos.y + 60, '#5b2333', 1.15);
+              });
+            }
+          }
         }
         continue;
       }
@@ -2559,6 +2974,221 @@ export class GameEngine {
             type: 'INK_ARROW',
             radius: 15,
           });
+        }
+      } else if (enemy.type === 'INK_BOMBER') {
+        // 爆墨傀儡：高速冲锋，贴近后点燃引信自爆（引信期被杀=拆除，无爆炸）
+        const speed = 148;
+        if (dist > 58) {
+          enemy.pos.x += (dx / dist) * speed * dt * slowFactor;
+          enemy.pos.z += (dz / dist) * speed * 0.62 * dt * slowFactor;
+          enemy.state = 'RUN';
+          this.enemyWalkCycle(enemy, dt);
+        } else if (enemy.attackCooldown <= 0 && (enemy.windupTimer ?? 0) <= 0) {
+          enemy.state = 'WINDUP';
+          enemy.stateTimer = 0;
+          enemy.stateDuration = 0.85;
+          enemy.windupTimer = 0.85;
+          enemy.windupMax = 0.85;
+          enemy.attackCooldown = 2.0; // 若被打断未死，短暂迟滞后再冲
+          sound.playWindup();
+        }
+      } else if (enemy.type === 'INK_SHIELD_GUARD') {
+        // 墨盾武僧：缓步推进，正面持盾；出招前摇收盾=唯一正面破防窗口
+        const speed = 72;
+        if (dist > 52) {
+          enemy.pos.x += (dx / dist) * speed * dt * slowFactor;
+          enemy.pos.z += (dz / dist) * speed * 0.6 * dt * slowFactor;
+          enemy.state = 'RUN';
+          this.enemyWalkCycle(enemy, dt);
+        } else {
+          enemy.state = 'IDLE';
+        }
+        if (
+          dist < 68 && Math.abs(dz) < 32 && enemy.attackCooldown <= 0 && (enemy.windupTimer ?? 0) <= 0
+        ) {
+          enemy.state = 'WINDUP';
+          enemy.stateTimer = 0;
+          enemy.stateDuration = 0.7; // 较长收盾窗口，鼓励打断反制
+          enemy.windupTimer = 0.7;
+          enemy.windupMax = 0.7;
+          enemy.attackCooldown = 2.8;
+          sound.playWindup();
+        }
+      } else if (enemy.type === 'INK_SUMMONER') {
+        // 符笔妖道：远距游走施法——妖符·唤召墨卒 / 扇形追踪符珠
+        const idealDist = 330;
+        if (dist < idealDist - 60 || dist > idealDist + 60) {
+          const flee = dist < idealDist ? -1 : 1;
+          enemy.pos.x += (dx / dist) * 88 * flee * dt * slowFactor;
+          enemy.pos.z += (dz / dist) * 64 * flee * dt * slowFactor;
+          enemy.state = 'RUN';
+          this.enemyWalkCycle(enemy, dt);
+        } else {
+          enemy.state = 'IDLE';
+        }
+        if (enemy.attackCooldown <= 0) {
+          enemy.attackCooldown = 4.2 + Math.random() * 1.6;
+          const aliveCount = this.enemies.reduce((n, e) => n + (e.hp > 0 ? 1 : 0), 0);
+          if (aliveCount < 14 && Math.random() < 0.6) {
+            // 妖符·唤：召出两只墨卒护法
+            enemy.state = 'ATTACK_THRUST';
+            enemy.stateTimer = 0;
+            enemy.stateDuration = 0.5;
+            this.addFloatingText('妖符·唤', enemy.pos.x, enemy.pos.y + 82, '#4d7c0f', 1.3, true);
+            this.spawnInkBurst(enemy.pos, 10, '#3d5a40');
+            this.schedule(0.35, () => {
+              if (enemy.hp <= 0) return;
+              for (const side of [-1, 1]) {
+                const sx = enemy.pos.x + side * 46;
+                const sz = enemy.pos.z + (Math.random() - 0.5) * 40;
+                this.spawnEnemyAt('INK_MINION', sx, sz, false, null);
+                this.spawnInkBurst({ x: sx, y: 0, z: sz }, 8, '#3d5a40');
+              }
+            });
+          } else {
+            // 追踪符珠：扇形三连发，有限转向率可走位甩开
+            enemy.state = 'ATTACK_HORIZONTAL';
+            enemy.stateTimer = 0;
+            enemy.stateDuration = 0.45;
+            const baseAng = Math.atan2(dz, dx);
+            for (let i = -1; i <= 1; i++) {
+              const ang = baseAng + i * 0.22;
+              const spd = 5.2;
+              this.shootProjectile({
+                pos: { x: enemy.pos.x, y: 25, z: enemy.pos.z },
+                vel: { x: Math.cos(ang) * spd, y: 0, z: Math.sin(ang) * spd },
+                damage: enemy.damage,
+                isPlayer: false,
+                life: 3.0,
+                maxLife: 3.0,
+                type: 'INK_TALISMAN',
+                radius: 13,
+                homing: 0.045,
+              });
+            }
+            this.addFloatingText('符珠', enemy.pos.x, enemy.pos.y + 70, '#4d7c0f', 1.1);
+          }
+        }
+      } else if (enemy.type === 'INK_CRANE') {
+        // 飞白鹤：空中盘旋 →「袭」预警 → 俯冲穿刺 → 落地喘息（破绽窗口）→ 再起飞
+        // 对空机制：悬停时普通招式够不到（dy<45），「挑」可击落；俯冲后半程与落地喘息可正常命中
+        const phase = enemy.cranePhase ?? 'HOVER';
+        enemy.isAirborne = enemy.pos.y > 30;
+        if (phase === 'HOVER') {
+          // 悬停盘旋：保持 190~280 距离，高度 74±6 浮沉
+          const idealDist = 235;
+          if (dist < idealDist - 45) {
+            enemy.pos.x -= (dx / dist) * 92 * dt * slowFactor;
+            enemy.pos.z -= (dz / dist) * 58 * dt * slowFactor;
+          } else if (dist > idealDist + 45) {
+            enemy.pos.x += (dx / dist) * 96 * dt * slowFactor;
+            enemy.pos.z += (dz / dist) * 62 * dt * slowFactor;
+          }
+          const hoverY = 74 + Math.sin(this.nowMs / 380 + (enemy.craneTimer ?? 0) * 2.6) * 6;
+          enemy.pos.y += (hoverY - enemy.pos.y) * Math.min(1, dt * 6); // 起飞平滑爬升
+          enemy.vel.y = 0;
+          enemy.state = 'IDLE';
+          enemy.craneTimer = (enemy.craneTimer ?? 0) - dt * slowFactor;
+          if ((enemy.craneTimer ?? 0) <= 0 && dist > 120 && dist < 540) {
+            // 进入俯冲前摇（「袭」预警圈，可走位躲开落点）
+            enemy.state = 'WINDUP';
+            enemy.stateTimer = 0;
+            enemy.stateDuration = 0.6;
+            enemy.windupTimer = 0.6;
+            enemy.windupMax = 0.6;
+            enemy.attackCooldown = 3.4 + Math.random() * 1.4;
+            sound.playWindup();
+          }
+        } else if (phase === 'DIVE') {
+          // 俯冲穿刺：沿锁定方向快速下坠，触地即判定冲击
+          enemy.pos.x += (enemy.craneVX ?? 0) * dt * slowFactor;
+          enemy.pos.z += (enemy.craneVZ ?? 0) * dt * slowFactor;
+          enemy.pos.z = Math.max(-140, Math.min(140, enemy.pos.z));
+          enemy.pos.y = Math.max(0, enemy.pos.y - 320 * dt);
+          enemy.vel.y = 0;
+          enemy.state = 'ATTACK_DASH';
+          if (enemy.pos.y <= 12) {
+            // 落点冲击
+            const hitDist = Math.hypot(player.pos.x - enemy.pos.x, player.pos.z - enemy.pos.z);
+            if (hitDist < 85 && Math.abs(player.pos.z - enemy.pos.z) < 48) {
+              if (!player.isInvincible && player.hp > 0) {
+                this.hurtPlayer(enemy.damage, enemy.pos.x <= player.pos.x ? 1 : -1, enemy);
+              }
+            }
+            this.spawnShockRing(enemy.pos.x, enemy.pos.z, 5, 70, 0.42, '#2f4858', 3);
+            this.spawnInkBurst(enemy.pos, 12, '#2f4858');
+            this.cameraShake = Math.max(this.cameraShake, 8);
+            sound.playSlash('light');
+            // 落地喘息：最佳输出窗口
+            enemy.cranePhase = 'PERCH';
+            enemy.craneTimer = 1.6;
+            enemy.pos.y = 0;
+            enemy.state = 'IDLE';
+          }
+        } else {
+          // PERCH 落地喘息：缓步拖离，破绽大
+          enemy.craneTimer = (enemy.craneTimer ?? 0) - dt;
+          enemy.pos.y = 0;
+          enemy.vel.y = 0;
+          enemy.isAirborne = false;
+          if (dist > 85) {
+            enemy.pos.x -= (dx / dist) * 55 * dt * slowFactor;
+            enemy.pos.z -= (dz / dist) * 36 * dt * slowFactor;
+            enemy.state = 'RUN';
+            this.enemyWalkCycle(enemy, dt);
+          } else {
+            enemy.state = 'IDLE';
+          }
+          if ((enemy.craneTimer ?? 0) <= 0) {
+            // 再次起飞
+            enemy.cranePhase = 'HOVER';
+            enemy.craneTimer = 2.4 + Math.random() * 1.8;
+            this.spawnInkBurst(enemy.pos, 10, '#2f4858');
+            this.spawnShockRing(enemy.pos.x, enemy.pos.z, 4, 58, 0.4, '#2f4858', 2.5);
+          }
+        }
+      } else if (enemy.type === 'INK_TURTLE') {
+        // 砚台龟：龟甲反震坦克——龟甲竖起时受击反震 22%；伸头出招（前摇）=安全输出窗口
+        const speed = 42;
+        if (dist > 55) {
+          enemy.pos.x += (dx / dist) * speed * dt * slowFactor;
+          enemy.pos.z += (dz / dist) * speed * 0.6 * dt * slowFactor;
+          enemy.state = 'RUN';
+          this.enemyWalkCycle(enemy, dt);
+        } else {
+          enemy.state = 'IDLE';
+        }
+        if (dist < 72 && Math.abs(dz) < 34 && enemy.attackCooldown <= 0 && (enemy.windupTimer ?? 0) <= 0) {
+          enemy.state = 'WINDUP';
+          enemy.stateTimer = 0;
+          enemy.stateDuration = 0.75;
+          enemy.windupTimer = 0.75;
+          enemy.windupMax = 0.75;
+          enemy.attackCooldown = 3.4;
+          sound.playWindup();
+        }
+      } else if (enemy.type === 'INK_DRUNKARD') {
+        // 醉墨剑客：醉步摇摆逼近，35% 概率侧身「醉避」挥击；连斩后醉倒踉跄=破绽
+        enemy.dodgeCooldown = Math.max(0, (enemy.dodgeCooldown ?? 0) - dt);
+        enemy.swayPhase = (enemy.swayPhase ?? 0) + dt * 2.4;
+        const speed = 128;
+        if (dist > 55) {
+          const swayBias = Math.sin(enemy.swayPhase) * 0.55; // 醉步左右斜晃
+          enemy.pos.x += (dx / dist) * speed * dt * slowFactor;
+          enemy.pos.z += ((dz / dist) + swayBias / Math.max(2, dist / 60)) * speed * 0.6 * dt * slowFactor;
+          enemy.state = 'RUN';
+          this.enemyWalkCycle(enemy, dt);
+        } else {
+          enemy.state = 'IDLE';
+        }
+        if (dist < 75 && Math.abs(dz) < 40 && enemy.attackCooldown <= 0 && (enemy.windupTimer ?? 0) <= 0) {
+          enemy.state = 'WINDUP';
+          enemy.stateTimer = 0;
+          enemy.stateDuration = 0.45; // 起手极快，预警窗口短
+          enemy.windupTimer = 0.45;
+          enemy.windupMax = 0.45;
+          enemy.attackCooldown = 2.6;
+          sound.playWindup();
         }
       } else {
         // Melee pursue (Minion, Brute, Ninja, Boss)
@@ -2647,6 +3277,21 @@ export class GameEngine {
 
     // --- PROJECTILES UPDATE ---
     for (const p of this.projectiles) {
+      // 追踪符珠：有限转向率朝玩家修正（可走位甩开）
+      if (p.homing && !p.isPlayer) {
+        const tdx = player.pos.x - p.pos.x;
+        const tdz = player.pos.z - p.pos.z;
+        const td = Math.max(1, Math.hypot(tdx, tdz));
+        const spd = Math.max(0.01, Math.hypot(p.vel.x, p.vel.z));
+        const steer = Math.min(1, p.homing * dt * 60);
+        const curX = p.vel.x / spd;
+        const curZ = p.vel.z / spd;
+        const nX = curX + (tdx / td - curX) * steer;
+        const nZ = curZ + (tdz / td - curZ) * steer;
+        const nL = Math.max(0.01, Math.hypot(nX, nZ));
+        p.vel.x = (nX / nL) * spd;
+        p.vel.z = (nZ / nL) * spd;
+      }
       p.pos.x += p.vel.x * dt * 60;
       p.pos.y += p.vel.y * dt * 60;
       p.pos.z += p.vel.z * dt * 60;
@@ -2689,6 +3334,14 @@ export class GameEngine {
             vx: 0, vy: 0.2, vz: 0,
             size: 1.4 + Math.random(), alpha: 0.3, decay: 0.08,
             color: '#3f2b26', shape: 'circle', noGravity: true,
+          });
+        } else if (p.type === 'INK_TALISMAN') {
+          // 追踪符珠：墨绿符晕尾迹
+          this.pushParticle({
+            x: p.pos.x, y: p.pos.y, z: p.pos.z,
+            vx: 0, vy: 0.15, vz: 0,
+            size: 1.6, alpha: 0.3, decay: 0.09,
+            color: '#4d7c0f', shape: 'circle', noGravity: true,
           });
         }
       }
@@ -3023,6 +3676,15 @@ export class GameEngine {
     const player = this.player;
     if (player.isInvincible || player.hp <= 0 || this.runEnded) return;
 
+    // 醉墨行：身形如醉步飘忽——概率完全闪避（无伤且不打断动作）
+    const dodgeChance = this.sumStat('dodgeChancePercent');
+    if (dodgeChance > 0 && Math.random() * 100 < dodgeChance) {
+      this.addFloatingText('醉避', player.pos.x, player.pos.y + 60, '#5b2333', 1.2);
+      this.spawnSpeedLines(player.pos, 5, '#5b2333');
+      sound.playSlash('light');
+      return;
+    }
+
     let dmgRed = 0;
     for (const a of player.affixes) {
       if (a.stats.damageReduction) dmgRed += a.stats.damageReduction;
@@ -3346,10 +4008,25 @@ export class GameEngine {
             enemy.state === 'WINDUP' ? this.nowMs * 0.02 : this.getEnemyWalkCycle(enemy)
           );
 
+          // 爆墨傀儡：引信脉冲红圈（引信越短闪烁越急）
+          if (enemy.type === 'INK_BOMBER' && (enemy.windupTimer ?? 0) > 0 && enemy.hp > 0) {
+            const ratio = 1 - (enemy.windupTimer ?? 0) / Math.max(0.01, enemy.windupMax ?? 1);
+            const pulse = (Math.sin(this.nowMs * (0.018 + ratio * 0.05)) + 1) * 0.5;
+            ctx.save();
+            ctx.beginPath();
+            ctx.ellipse(sx, groundY, (30 + pulse * 10) * finalScale, (12 + pulse * 4) * finalScale, 0, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(234, 88, 12, ${0.35 + pulse * 0.4})`;
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+            ctx.restore();
+          }
+
           StickmanSkeleton.render(ctx, renderSx, renderSy, finalScale, enemy.facing, pose, {
             isPlayer: false,
             enemyType: enemy.type,
             inkAlpha: (enemy.state === 'DEAD' ? 0.3 : 1.0) * fade,
+            shieldDown: enemy.type === 'INK_SHIELD_GUARD' && (enemy.state === 'WINDUP' || enemy.state.startsWith('ATTACK') || enemy.hitStun > 0),
+            ribbonPhase: enemy.type === 'INK_SUMMONER' ? this.nowMs * 0.004 : 0,
           });
 
           // 寒缓冰霜标记
@@ -3364,9 +4041,14 @@ export class GameEngine {
             ctx.restore();
           }
 
-          // 前摇预警标记：头顶红色「!」+ 渐亮光圈（描边替代 shadowBlur，性能友好）
+          // 前摇预警标记：头顶红色「!」（爆墨傀儡为「爆」）+ 渐亮光圈（描边替代 shadowBlur，性能友好）
           if ((enemy.windupTimer ?? 0) > 0 && enemy.hp > 0) {
             const ratio = 1 - (enemy.windupTimer ?? 0) / Math.max(0.01, enemy.windupMax ?? 1);
+            const windupMark = enemy.type === 'INK_BOMBER' ? '爆'
+              : enemy.type === 'INK_CRANE' ? '袭'
+              : enemy.type === 'INK_TURTLE' ? '震'
+              : enemy.type === 'INK_DRUNKARD' ? '斩'
+              : '！';
             ctx.save();
             ctx.font = `bold ${Math.round(22 * finalScale)}px 'Ma Shan Zheng', cursive`;
             ctx.textAlign = 'center';
@@ -3375,10 +4057,10 @@ export class GameEngine {
             ctx.lineWidth = 4;
             ctx.strokeStyle = 'rgba(243, 236, 219, 0.9)';
             ctx.globalAlpha = 0.85;
-            ctx.strokeText('！', renderSx, renderSy - 88 * finalScale);
+            ctx.strokeText(windupMark, renderSx, renderSy - 88 * finalScale);
             ctx.globalAlpha = 1;
             ctx.fillStyle = `rgba(239, 68, 68, ${0.5 + ratio * 0.5})`;
-            ctx.fillText('！', renderSx, renderSy - 88 * finalScale);
+            ctx.fillText(windupMark, renderSx, renderSy - 88 * finalScale);
             ctx.restore();
           }
 
@@ -4081,6 +4763,23 @@ export class GameEngine {
       ctx.lineTo(6, 4);
       ctx.closePath();
       ctx.fillStyle = '#b91c1c';
+      ctx.fill();
+    } else if (p.type === 'INK_TALISMAN') {
+      // 追踪符珠：旋转符纸 + 墨绿晕环
+      ctx.scale(scale, scale);
+      ctx.rotate(this.nowMs * 0.008);
+      ctx.beginPath();
+      ctx.arc(0, 0, 13, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(77, 124, 15, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = '#efe6cf';
+      ctx.fillRect(-5, -5, 10, 10);
+      ctx.fillStyle = '#3d5a40';
+      ctx.fillRect(-2.5, -2.5, 5, 5);
+      ctx.fillStyle = '#b91c1c';
+      ctx.beginPath();
+      ctx.arc(0, 0, 1.6, 0, Math.PI * 2);
       ctx.fill();
     } else if (p.type === 'BOSS_ORB') {
       // Boss 墨珠：暗紫墨球 + 墨晕尾迹

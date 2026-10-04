@@ -247,6 +247,79 @@ export const ALL_AFFIXES: Affix[] = [
       moveSpeedBonus: 12,
     },
   },
+  // ==================== 觉醒与新敌对策词条（20 → 26） ====================
+  {
+    id: 'crane_sky',
+    name: '鹤唳九天',
+    hanziSeal: '鹤',
+    rarity: 'RARE',
+    desc: '墨锋上挑如鹤唳九霄：对浮空妖敌伤害提升35%，专克盘旋的飞白鹤。',
+    iconType: 'feather',
+    stats: {
+      skySlayerPercent: 35,
+      gestureBonus: 10,
+    },
+  },
+  {
+    id: 'drunk_dodge',
+    name: '醉墨行',
+    hanziSeal: '醉',
+    rarity: 'EPIC',
+    desc: '身形如醉步飘忽：受击时12%概率完全闪避，不受任何伤害与硬直。',
+    iconType: 'feather',
+    stats: {
+      dodgeChancePercent: 12,
+      moveSpeedBonus: 8,
+    },
+  },
+  {
+    id: 'soul_surge',
+    name: '墨魂涌动',
+    hanziSeal: '涌',
+    rarity: 'COMMON',
+    desc: '墨魂在经脉中奔涌：觉醒充能速度提升30%，墨意回复提高15%。',
+    iconType: 'brush',
+    stats: {
+      awakeningGainBonus: 30,
+      inkRegenBonus: 15,
+    },
+  },
+  {
+    id: 'myriad_ink',
+    name: '万墨归一',
+    hanziSeal: '归',
+    rarity: 'LEGENDARY',
+    desc: '万道墨流归于一笔：觉醒技「万墨归宗」伤害提升60%，攻击力+10%。',
+    iconType: 'brush',
+    stats: {
+      awakeningDamageBonus: 60,
+      attackBonus: 10,
+    },
+  },
+  {
+    id: 'swallow_mountains',
+    name: '气吞山河',
+    hanziSeal: '吞',
+    rarity: 'EPIC',
+    desc: '觉醒爆发时墨浪翻卷更广阔：觉醒技范围扩大50%，气血上限+30。',
+    iconType: 'flame',
+    stats: {
+      awakeningRadiusBonus: 50,
+      maxHpBonus: 30,
+    },
+  },
+  {
+    id: 'xuanwu_bulwark',
+    name: '玄武镇岳',
+    hanziSeal: '武',
+    rarity: 'RARE',
+    desc: '玄武镇岳气定神闲：每波开战时觉醒充能直接+50，气血上限提升40点。',
+    iconType: 'shield',
+    stats: {
+      awakeningOnWaveStart: 50,
+      maxHpBonus: 40,
+    },
+  },
 ];
 
 /** 稀有度基础权重（越高越稀有） */

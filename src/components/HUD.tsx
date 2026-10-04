@@ -29,6 +29,9 @@ interface HUDProps {
   recentGesture: GestureResult | null;
   onTriggerMove: (type: 'TAP' | 'HORIZONTAL' | 'VERTICAL_DOWN' | 'DIAGONAL_UP' | 'CIRCLE' | 'ZIGZAG') => void;
   onTriggerJump: () => void;
+  onTriggerAwakening: () => void;
+  awakening: number;
+  awakeningMax: number;
   controlMode: ControlMode;
   onToggleControlMode: () => void;
   onTogglePause: () => void;
@@ -58,6 +61,9 @@ export const HUD: React.FC<HUDProps> = ({
   recentGesture,
   onTriggerMove,
   onTriggerJump,
+  onTriggerAwakening,
+  awakening,
+  awakeningMax,
   controlMode,
   onToggleControlMode,
   onTogglePause,
@@ -67,6 +73,8 @@ export const HUD: React.FC<HUDProps> = ({
   const hpPercent = Math.max(0, Math.min(100, (hp / maxHp) * 100));
   const inkPercent = Math.max(0, Math.min(100, (ink / maxInk) * 100));
   const shieldPercent = shieldMax > 0 ? Math.max(0, Math.min(100, (shield / shieldMax) * 100)) : 0;
+  const awakeningPercent = awakeningMax > 0 ? Math.max(0, Math.min(100, (awakening / awakeningMax) * 100)) : 0;
+  const isAwakenReady = awakening >= awakeningMax;
   const isLowHp = hp > 0 && hpPercent <= 30;
 
   return (
@@ -146,6 +154,18 @@ export const HUD: React.FC<HUDProps> = ({
                 />
               </div>
               <span className="text-[#5a4a34] tabular-nums text-[9px]">{Math.floor(ink)}/{maxInk}</span>
+            </div>
+
+            {/* Awakening Bar（觉醒槽：满槽可释放「万墨归宗」[G]） */}
+            <div className="flex items-center gap-1.5 text-[10px] font-ink-serif">
+              <span className={`font-semibold w-6 ${isAwakenReady ? 'text-[#b45309] animate-pulse' : 'text-[#92703c]'}`}>觉醒</span>
+              <div className={`flex-1 h-2 bg-[#ded3b8] rounded-full overflow-hidden border ${isAwakenReady ? 'border-[#b45309] shadow-[0_0_6px_rgba(245,158,11,0.8)]' : 'border-[#b3a181]'}`}>
+                <div
+                  className={`h-full transition-all duration-200 ${isAwakenReady ? 'bg-gradient-to-r from-[#d97706] to-[#fbbf24] animate-pulse' : 'bg-gradient-to-r from-[#92703c] to-[#d97706]'}`}
+                  style={{ width: `${awakeningPercent}%` }}
+                />
+              </div>
+              <span className="text-[#5a4a34] tabular-nums text-[9px]">{isAwakenReady ? '可释放!' : `${Math.floor(awakening)}/${awakeningMax}`}</span>
             </div>
           </div>
         </div>
@@ -302,8 +322,20 @@ export const HUD: React.FC<HUDProps> = ({
             <span className="text-sm font-calligraphy text-[#0369a1]">跃</span>
             <span className="text-[9px] text-[#85745a]">轻功[空格]</span>
           </button>
+          <button
+            onClick={onTriggerAwakening}
+            className={`flex flex-col items-center justify-center w-11 h-11 active:scale-95 border rounded-xl transition-transform cursor-pointer shadow-lg shadow-black/40 ${
+              isAwakenReady
+                ? 'bg-gradient-to-b from-[#fbbf24] to-[#d97706] border-[#b45309] animate-pulse'
+                : 'bg-[#ded3b8]/60 hover:bg-[#c9b995] border-[#b3a181]/50 opacity-70'
+            }`}
+            title="觉醒技·万墨归宗 (快捷键 G，满槽后释放全屏墨爆)"
+          >
+            <span className={`text-sm font-calligraphy ${isAwakenReady ? 'text-[#7c2d12]' : 'text-[#92703c]'}`}>觉</span>
+            <span className={`text-[9px] ${isAwakenReady ? 'text-[#7c2d12] font-bold' : 'text-[#85745a]'}`}>万墨[G]</span>
+          </button>
           <div className="text-[10px] font-ink-serif text-[#937f60] hidden lg:block">
-            键盘: [WASD]纵深移动 [Space]轻功起跃 [J]刺 [U]横 [I]劈 [O]圆 [L]闪 [ESC]暂停
+            键盘: [WASD]纵深移动 [Space]轻功起跃 [J]刺 [U]横 [I]劈 [O]圆 [L]闪 [G]觉醒 [ESC]暂停
           </div>
         </div>
 
