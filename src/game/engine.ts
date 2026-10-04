@@ -197,10 +197,11 @@ export class GameEngine {
   private lastInkEmitted: number = -1;
   private lastShieldEmitted: number = -1;
   private lastBossEmitted: string = '';
+  private activeBoss: EnemyEntity | null = null; // Boss 引用缓存：免每帧 enemies.find 扫描+闭包分配
 
   constructor(canvas: HTMLCanvasElement, callbacks: GameEngineCallbacks) {
     this.canvas = canvas;
-    const context = canvas.getContext('2d');
+    const context = canvas.getContext('2d', { alpha: false }); // 画布全帧不透明覆盖，免浏览器逐帧与页面背景合成（移动端收益明显）
     if (!context) throw new Error('Cannot get 2d context');
     this.ctx = context;
     this.callbacks = callbacks;
@@ -546,6 +547,7 @@ export class GameEngine {
   public resetGame() {
     this.player = this.createInitialPlayer();
     this.enemies = [];
+    this.activeBoss = null;
     this.projectiles = [];
     this.particles = [];
     this.slashLinks = [];
@@ -983,6 +985,7 @@ export class GameEngine {
         { skill: 'INK_VOLLEY', timer: 6.5, windup: 0, active: 0 },
         { skill: 'SUMMON', timer: 9, windup: 0, active: 0 },
       ];
+      this.activeBoss = enemy;
       this.callbacks.onBossUpdate({ name: enemy.name, hp: enemy.hp, maxHp: enemy.maxHp, phase: 1 });
       this.lastBossEmitted = enemy.id;
     }
@@ -2200,6 +2203,7 @@ export class GameEngine {
     if (enemy.elite) this.runStats.eliteKills++;
     if (enemy.isBoss) {
       this.runStats.bossKills++;
+      this.activeBoss = null;
       this.addScore(500 + 150 * this.wave);
       this.addFloatingText('宗师陨落！', enemy.pos.x, enemy.pos.y + 90, '#fbbf24', 1.8, true, true);
       this.callbacks.onBossUpdate(null);
@@ -3265,8 +3269,8 @@ export class GameEngine {
       this.enemies.length = write;
     }
 
-    // --- BOSS 血条同步（节流：仅变化时） ---
-    const boss = this.enemies.find((e) => e.isBoss && e.hp > 0);
+    // --- BOSS 血条同步（节流：仅变化时；Boss 引用缓存替代每帧 find 扫描） ---
+    const boss = this.activeBoss && this.activeBoss.hp > 0 ? this.activeBoss : null;
     if (boss) {
       const key = `${boss.id}:${Math.ceil((boss.hp / boss.maxHp) * 100)}:${boss.bossPhase}`;
       if (key !== this.lastBossEmitted) {

@@ -5,7 +5,42 @@
 
 import { ActionState, EnemyType, SkeletonPose } from '../types/game';
 
+/**
+ * 预计算骨骼调色板：按种族查表（原 render 每实体每帧新建对象字面量 + 六层三元链，全量省去）
+ * 玩家纯黑墨骨 / 傀儡焦褐 / 武僧铁灰 / 妖道墨绿 / 飞白鹤青 / 砚台龟墨石 / 醉剑客酒褐 / 其余妖墨暗赤
+ */
+const BONE_PALETTES: Record<string, { main: string; dim: string; limb: string }> = {
+  PLAYER: { main: '#16130f', dim: '#2d2b28', limb: '#33312e' },
+  INK_BOMBER: { main: '#6b3410', dim: '#7c4520', limb: '#8a5a30' },
+  INK_SHIELD_GUARD: { main: '#3f4756', dim: '#4b5563', limb: '#5b6572' },
+  INK_SUMMONER: { main: '#3d5a40', dim: '#486b4c', limb: '#557d5a' },
+  INK_CRANE: { main: '#2f4858', dim: '#3c5a6e', limb: '#4a6b80' },
+  INK_TURTLE: { main: '#3b3a36', dim: '#4a4843', limb: '#585650' },
+  INK_DRUNKARD: { main: '#5b2333', dim: '#6d3243', limb: '#7d4052' },
+  DEFAULT: { main: '#54241a', dim: '#6b3226', limb: '#7a4132' },
+};
+
 export class StickmanSkeleton {
+  /**
+   * 共享位姿暂存对象：getPose 每帧每实体调用（30+ 实体 × 60fps ≈ 1900 对象/秒）。
+   * 全部消费点均为「getPose → render 同步用完即弃」，无跨帧持有 —— 故用共享 scratch 消除 GC 压力。
+   * 约定：每个状态分支必须全量覆盖全部 12 个基础字段（原实现即如此），唯一可选字段 hipDrop 在入口复位。
+   */
+  private static readonly SCRATCH: SkeletonPose = {
+    torsoAngle: 0,
+    headAngle: 0,
+    leftUpperArmAngle: 0,
+    leftForearmAngle: 0,
+    rightUpperArmAngle: 0,
+    rightForearmAngle: 0,
+    leftThighAngle: 0,
+    leftShinAngle: 0,
+    rightThighAngle: 0,
+    rightShinAngle: 0,
+    weaponAngle: 0,
+    weaponOffset: { x: 0, y: 0 },
+  };
+
   /**
    * Calculate bone angles based on action state, timer, and movement phase
    *
@@ -15,6 +50,8 @@ export class StickmanSkeleton {
    * - 肘部相反：前臂向前折（forearmAngle ≥ 0）
    */
   public static getPose(state: ActionState, timer: number, duration: number, walkCycle: number): SkeletonPose {
+    const p = StickmanSkeleton.SCRATCH;
+    p.hipDrop = 0; // 可选字段复位防跨状态串味（其余字段各分支全量覆盖）
     const progress = Math.min(1, Math.max(0, timer / Math.max(0.01, duration)));
 
     switch (state) {
@@ -24,253 +61,253 @@ export class StickmanSkeleton {
         const armSwing = Math.cos(walkCycle) * 0.45;
         // 小腿角：基础 -0.3，前摆渐伸直，后摆时脚跟大幅后踢（更负）
         const shinOf = (ls: number) => -0.3 + 0.15 * ls + Math.min(0, ls) * 0.45;
-        return {
-          torsoAngle: 0.22,
-          headAngle: 0.08,
-          leftUpperArmAngle: -0.1 - armSwing * 1.1,
-          leftForearmAngle: 0.75,
-          rightUpperArmAngle: -0.45 + armSwing * 0.2,
-          rightForearmAngle: 0.95,
-          leftThighAngle: legSwing + 0.12,
-          leftShinAngle: shinOf(legSwing),
-          rightThighAngle: -legSwing + 0.12,
-          rightShinAngle: shinOf(-legSwing),
-          weaponAngle: 0.55 + Math.sin(walkCycle * 2) * 0.06,
-          weaponOffset: { x: 3, y: 1 },
-        };
+        p.torsoAngle = 0.22;
+        p.headAngle = 0.08;
+        p.leftUpperArmAngle = -0.1 - armSwing * 1.1;
+        p.leftForearmAngle = 0.75;
+        p.rightUpperArmAngle = -0.45 + armSwing * 0.2;
+        p.rightForearmAngle = 0.95;
+        p.leftThighAngle = legSwing + 0.12;
+        p.leftShinAngle = shinOf(legSwing);
+        p.rightThighAngle = -legSwing + 0.12;
+        p.rightShinAngle = shinOf(-legSwing);
+        p.weaponAngle = 0.55 + Math.sin(walkCycle * 2) * 0.06;
+        p.weaponOffset.x = 3;
+        p.weaponOffset.y = 1;
+        return p;
       }
 
       case 'JUMP_UP': {
         // 腾空收腿：膝盖前提、小腿后折（正确弯曲方向的团身）
-        return {
-          torsoAngle: -0.1,
-          headAngle: -0.15,
-          leftUpperArmAngle: -1.45,
-          leftForearmAngle: 0.45,
-          rightUpperArmAngle: -1.2,
-          rightForearmAngle: 0.55,
-          leftThighAngle: 0.85,
-          leftShinAngle: -1.2,
-          rightThighAngle: 0.3,
-          rightShinAngle: -0.7,
-          weaponAngle: -0.7,
-          weaponOffset: { x: 2, y: -2 },
-        };
+        p.torsoAngle = -0.1;
+        p.headAngle = -0.15;
+        p.leftUpperArmAngle = -1.45;
+        p.leftForearmAngle = 0.45;
+        p.rightUpperArmAngle = -1.2;
+        p.rightForearmAngle = 0.55;
+        p.leftThighAngle = 0.85;
+        p.leftShinAngle = -1.2;
+        p.rightThighAngle = 0.3;
+        p.rightShinAngle = -0.7;
+        p.weaponAngle = -0.7;
+        p.weaponOffset.x = 2;
+        p.weaponOffset.y = -2;
+        return p;
       }
 
       case 'FALL': {
         // 下落预备落地：膝微屈后折，手臂上扬平衡
-        return {
-          torsoAngle: 0.12,
-          headAngle: 0.18,
-          leftUpperArmAngle: -1.0,
-          leftForearmAngle: 0.5,
-          rightUpperArmAngle: -0.75,
-          rightForearmAngle: 0.6,
-          leftThighAngle: 0.35,
-          leftShinAngle: -0.35,
-          rightThighAngle: 0.12,
-          rightShinAngle: -0.2,
-          weaponAngle: 0.35,
-          weaponOffset: { x: 0, y: 4 },
-        };
+        p.torsoAngle = 0.12;
+        p.headAngle = 0.18;
+        p.leftUpperArmAngle = -1.0;
+        p.leftForearmAngle = 0.5;
+        p.rightUpperArmAngle = -0.75;
+        p.rightForearmAngle = 0.6;
+        p.leftThighAngle = 0.35;
+        p.leftShinAngle = -0.35;
+        p.rightThighAngle = 0.12;
+        p.rightShinAngle = -0.2;
+        p.weaponAngle = 0.35;
+        p.weaponOffset.x = 0;
+        p.weaponOffset.y = 4;
+        return p;
       }
 
       case 'ATTACK_THRUST': {
         // 直刺：弓步——前膝前顶小腿后折撑地，后腿蹬直成力线
         const lunge = Math.sin(progress * Math.PI);
-        return {
-          torsoAngle: 0.3 * lunge,
-          headAngle: 0.08,
-          leftUpperArmAngle: -0.7,
-          leftForearmAngle: 0.6,
-          rightUpperArmAngle: 1.5 * lunge,
-          rightForearmAngle: 0.05,
-          leftThighAngle: -0.55 * lunge,
-          leftShinAngle: -0.15 * lunge,
-          rightThighAngle: 0.7 * lunge,
-          rightShinAngle: -0.3 * lunge,
-          weaponAngle: -0.02,
-          weaponOffset: { x: 14 * lunge, y: -2 },
-          hipDrop: 3 * lunge,
-        };
+        p.torsoAngle = 0.3 * lunge;
+        p.headAngle = 0.08;
+        p.leftUpperArmAngle = -0.7;
+        p.leftForearmAngle = 0.6;
+        p.rightUpperArmAngle = 1.5 * lunge;
+        p.rightForearmAngle = 0.05;
+        p.leftThighAngle = -0.55 * lunge;
+        p.leftShinAngle = -0.15 * lunge;
+        p.rightThighAngle = 0.7 * lunge;
+        p.rightShinAngle = -0.3 * lunge;
+        p.weaponAngle = -0.02;
+        p.weaponOffset.x = 14 * lunge;
+        p.weaponOffset.y = -2;
+        p.hipDrop = 3 * lunge;
+        return p;
       }
 
       case 'ATTACK_HORIZONTAL': {
         // 横扫：重心左右微移，双脚钉地旋转
         const angle = -1.2 + progress * 2.8;
-        return {
-          torsoAngle: Math.sin(progress * Math.PI) * 0.32,
-          headAngle: 0.05,
-          leftUpperArmAngle: -0.5,
-          leftForearmAngle: 0.7,
-          rightUpperArmAngle: angle,
-          rightForearmAngle: 0.45,
-          leftThighAngle: 0.25,
-          leftShinAngle: -0.35,
-          rightThighAngle: -0.2,
-          rightShinAngle: -0.1,
-          weaponAngle: angle + 0.3,
-          weaponOffset: { x: 6, y: -2 },
-        };
+        p.torsoAngle = Math.sin(progress * Math.PI) * 0.32;
+        p.headAngle = 0.05;
+        p.leftUpperArmAngle = -0.5;
+        p.leftForearmAngle = 0.7;
+        p.rightUpperArmAngle = angle;
+        p.rightForearmAngle = 0.45;
+        p.leftThighAngle = 0.25;
+        p.leftShinAngle = -0.35;
+        p.rightThighAngle = -0.2;
+        p.rightShinAngle = -0.1;
+        p.weaponAngle = angle + 0.3;
+        p.weaponOffset.x = 6;
+        p.weaponOffset.y = -2;
+        return p;
       }
 
       case 'ATTACK_VERTICAL': {
         // 劈砍：高举过顶后向前下劈，前腿撑住重心
         const t = progress < 0.3 ? progress / 0.3 : (progress - 0.3) / 0.7;
         const armAng = progress < 0.3 ? -1.8 * t : -1.8 + 3.2 * t;
-        return {
-          torsoAngle: progress < 0.3 ? -0.2 : 0.38 * t,
-          headAngle: progress < 0.3 ? -0.3 : 0.18,
-          leftUpperArmAngle: -0.8,
-          leftForearmAngle: 0.6,
-          rightUpperArmAngle: armAng,
-          rightForearmAngle: 0.25,
-          leftThighAngle: -0.28,
-          leftShinAngle: -0.45,
-          rightThighAngle: 0.35,
-          rightShinAngle: -0.25,
-          weaponAngle: armAng + 0.2,
-          weaponOffset: { x: 4, y: 0 },
-          hipDrop: 3 * t,
-        };
+        p.torsoAngle = progress < 0.3 ? -0.2 : 0.38 * t;
+        p.headAngle = progress < 0.3 ? -0.3 : 0.18;
+        p.leftUpperArmAngle = -0.8;
+        p.leftForearmAngle = 0.6;
+        p.rightUpperArmAngle = armAng;
+        p.rightForearmAngle = 0.25;
+        p.leftThighAngle = -0.28;
+        p.leftShinAngle = -0.45;
+        p.rightThighAngle = 0.35;
+        p.rightShinAngle = -0.25;
+        p.weaponAngle = armAng + 0.2;
+        p.weaponOffset.x = 4;
+        p.weaponOffset.y = 0;
+        p.hipDrop = 3 * t;
+        return p;
       }
 
       case 'ATTACK_LAUNCH': {
         // 上挑：剑自下而上撩起，身体后仰展腹，后腿蹬地拖直
         const arm = 1.6 - progress * 2.8;
-        return {
-          torsoAngle: -0.28 * progress,
-          headAngle: -0.35 * progress,
-          leftUpperArmAngle: 0.8,
-          leftForearmAngle: 0.45,
-          rightUpperArmAngle: arm,
-          rightForearmAngle: 0.2,
-          leftThighAngle: 0.3,
-          leftShinAngle: -0.2,
-          rightThighAngle: -0.35,
-          rightShinAngle: -0.5,
-          weaponAngle: arm - 0.4,
-          weaponOffset: { x: 2, y: -6 },
-        };
+        p.torsoAngle = -0.28 * progress;
+        p.headAngle = -0.35 * progress;
+        p.leftUpperArmAngle = 0.8;
+        p.leftForearmAngle = 0.45;
+        p.rightUpperArmAngle = arm;
+        p.rightForearmAngle = 0.2;
+        p.leftThighAngle = 0.3;
+        p.leftShinAngle = -0.2;
+        p.rightThighAngle = -0.35;
+        p.rightShinAngle = -0.5;
+        p.weaponAngle = arm - 0.4;
+        p.weaponOffset.x = 2;
+        p.weaponOffset.y = -6;
+        return p;
       }
 
       case 'ATTACK_TAICHI': {
         // 360 旋转：双脚为轴钉地，剑随身体旋转
         const spin = progress * Math.PI * 2;
-        return {
-          torsoAngle: Math.sin(spin) * 0.16,
-          headAngle: 0,
-          leftUpperArmAngle: -1.2,
-          leftForearmAngle: 0.8,
-          rightUpperArmAngle: Math.cos(spin) * 1.5,
-          rightForearmAngle: 0.4,
-          leftThighAngle: 0.28,
-          leftShinAngle: -0.3,
-          rightThighAngle: -0.28,
-          rightShinAngle: -0.2,
-          weaponAngle: spin,
-          weaponOffset: { x: 0, y: 0 },
-          hipDrop: 2,
-        };
+        p.torsoAngle = Math.sin(spin) * 0.16;
+        p.headAngle = 0;
+        p.leftUpperArmAngle = -1.2;
+        p.leftForearmAngle = 0.8;
+        p.rightUpperArmAngle = Math.cos(spin) * 1.5;
+        p.rightForearmAngle = 0.4;
+        p.leftThighAngle = 0.28;
+        p.leftShinAngle = -0.3;
+        p.rightThighAngle = -0.28;
+        p.rightShinAngle = -0.2;
+        p.weaponAngle = spin;
+        p.weaponOffset.x = 0;
+        p.weaponOffset.y = 0;
+        p.hipDrop = 2;
+        return p;
       }
 
       case 'ATTACK_DASH': {
         // 滑步闪：压低重心的猎步——前膝深折、后腿蹬直拖行，剑前引低探
-        return {
-          torsoAngle: 0.5,
-          headAngle: 0.1,
-          leftUpperArmAngle: -1.0,
-          leftForearmAngle: 0.3,
-          rightUpperArmAngle: 0.9,
-          rightForearmAngle: 0.15,
-          leftThighAngle: -0.75,
-          leftShinAngle: -0.35,
-          rightThighAngle: 0.85,
-          rightShinAngle: -0.75,
-          weaponAngle: -0.1,
-          weaponOffset: { x: 10, y: -2 },
-          hipDrop: 8,
-        };
+        p.torsoAngle = 0.5;
+        p.headAngle = 0.1;
+        p.leftUpperArmAngle = -1.0;
+        p.leftForearmAngle = 0.3;
+        p.rightUpperArmAngle = 0.9;
+        p.rightForearmAngle = 0.15;
+        p.leftThighAngle = -0.75;
+        p.leftShinAngle = -0.35;
+        p.rightThighAngle = 0.85;
+        p.rightShinAngle = -0.75;
+        p.weaponAngle = -0.1;
+        p.weaponOffset.x = 10;
+        p.weaponOffset.y = -2;
+        p.hipDrop = 8;
+        return p;
       }
 
       case 'WINDUP': {
         // 攻击前摇蓄力：重心后坐、武器高举过顶并高频颤动，给玩家明确闪避预警
         const tremble = Math.sin(walkCycle * 22) * 0.09;
         const charge = Math.min(1, progress * 1.4);
-        return {
-          torsoAngle: -0.35 * charge,
-          headAngle: -0.3 * charge,
-          leftUpperArmAngle: -0.9 * charge,
-          leftForearmAngle: 1.1,
-          rightUpperArmAngle: -2.2 * charge + tremble,
-          rightForearmAngle: 0.5,
-          leftThighAngle: 0.55 * charge,
-          leftShinAngle: -0.55 * charge,
-          rightThighAngle: -0.45 * charge,
-          rightShinAngle: -0.6 * charge,
-          weaponAngle: -1.9 + tremble * 2,
-          weaponOffset: { x: -4, y: -8 * charge },
-          hipDrop: 5 * charge,
-        };
+        p.torsoAngle = -0.35 * charge;
+        p.headAngle = -0.3 * charge;
+        p.leftUpperArmAngle = -0.9 * charge;
+        p.leftForearmAngle = 1.1;
+        p.rightUpperArmAngle = -2.2 * charge + tremble;
+        p.rightForearmAngle = 0.5;
+        p.leftThighAngle = 0.55 * charge;
+        p.leftShinAngle = -0.55 * charge;
+        p.rightThighAngle = -0.45 * charge;
+        p.rightShinAngle = -0.6 * charge;
+        p.weaponAngle = -1.9 + tremble * 2;
+        p.weaponOffset.x = -4;
+        p.weaponOffset.y = -8 * charge;
+        p.hipDrop = 5 * charge;
+        return p;
       }
 
       case 'HURT': {
         // 受击踉跄：上身后仰，双腿后撑屈膝缓冲，髋部下沉
         const r = Math.max(0.35, Math.sin(progress * Math.PI));
-        return {
-          torsoAngle: -0.48 * r,
-          headAngle: -0.58 * r,
-          leftUpperArmAngle: -1.2 * r,
-          leftForearmAngle: 0.8,
-          rightUpperArmAngle: -1.1 * r,
-          rightForearmAngle: 0.9,
-          leftThighAngle: 0.45 * r,
-          leftShinAngle: -0.35 * r,
-          rightThighAngle: -0.35 * r,
-          rightShinAngle: -0.55 * r,
-          weaponAngle: 0.95,
-          weaponOffset: { x: -6 * r, y: 4 * r },
-          hipDrop: 6 * r,
-        };
+        p.torsoAngle = -0.48 * r;
+        p.headAngle = -0.58 * r;
+        p.leftUpperArmAngle = -1.2 * r;
+        p.leftForearmAngle = 0.8;
+        p.rightUpperArmAngle = -1.1 * r;
+        p.rightForearmAngle = 0.9;
+        p.leftThighAngle = 0.45 * r;
+        p.leftShinAngle = -0.35 * r;
+        p.rightThighAngle = -0.35 * r;
+        p.rightShinAngle = -0.55 * r;
+        p.weaponAngle = 0.95;
+        p.weaponOffset.x = -6 * r;
+        p.weaponOffset.y = 4 * r;
+        p.hipDrop = 6 * r;
+        return p;
       }
 
       case 'DEAD': {
         // 倒地：髋部沉降贴近地面，躯干放平，四肢摊开
-        return {
-          torsoAngle: 1.45,
-          headAngle: 1.05,
-          leftUpperArmAngle: 1.15,
-          leftForearmAngle: 0.2,
-          rightUpperArmAngle: 0.85,
-          rightForearmAngle: 0.35,
-          leftThighAngle: 0.85,
-          leftShinAngle: -0.35,
-          rightThighAngle: 0.3,
-          rightShinAngle: -0.75,
-          weaponAngle: 1.6,
-          weaponOffset: { x: 8, y: 10 },
-          hipDrop: 26,
-        };
+        p.torsoAngle = 1.45;
+        p.headAngle = 1.05;
+        p.leftUpperArmAngle = 1.15;
+        p.leftForearmAngle = 0.2;
+        p.rightUpperArmAngle = 0.85;
+        p.rightForearmAngle = 0.35;
+        p.leftThighAngle = 0.85;
+        p.leftShinAngle = -0.35;
+        p.rightThighAngle = 0.3;
+        p.rightShinAngle = -0.75;
+        p.weaponAngle = 1.6;
+        p.weaponOffset.x = 8;
+        p.weaponOffset.y = 10;
+        p.hipDrop = 26;
+        return p;
       }
 
       case 'IDLE':
       default: {
         const breath = Math.sin(walkCycle * 0.8) * 0.05;
-        return {
-          torsoAngle: breath,
-          headAngle: -breath * 0.5,
-          leftUpperArmAngle: 0.35 + breath,
-          leftForearmAngle: 0.7,
-          rightUpperArmAngle: -0.2 - breath,
-          rightForearmAngle: 0.9,
-          leftThighAngle: 0.1,
-          leftShinAngle: -0.05,
-          rightThighAngle: -0.14,
-          rightShinAngle: -0.1,
-          weaponAngle: 0.45 + breath,
-          weaponOffset: { x: 2, y: 0 },
-        };
+        p.torsoAngle = breath;
+        p.headAngle = -breath * 0.5;
+        p.leftUpperArmAngle = 0.35 + breath;
+        p.leftForearmAngle = 0.7;
+        p.rightUpperArmAngle = -0.2 - breath;
+        p.rightForearmAngle = 0.9;
+        p.leftThighAngle = 0.1;
+        p.leftShinAngle = -0.05;
+        p.rightThighAngle = -0.14;
+        p.rightShinAngle = -0.1;
+        p.weaponAngle = 0.45 + breath;
+        p.weaponOffset.x = 2;
+        p.weaponOffset.y = 0;
+        return p;
       }
     }
   }
@@ -301,23 +338,11 @@ export class StickmanSkeleton {
     const alpha = options.inkAlpha ?? 1;
     ctx.globalAlpha = alpha;
 
-    // Bone stroke style：玩家纯黑墨骨，敌军按种族区分妖墨色相（浅色宣纸上双方都清晰且可分辨）
-    // 爆墨傀儡焦褐 / 墨盾武僧铁灰 / 符笔妖道墨绿 / 飞白鹤靛青 / 砚台龟墨石 / 醉墨剑客酒褐 / 其余妖墨暗赤
+    // Bone stroke style：玩家纯黑墨骨，敌军按种族区分妖墨色相（浅色宣纸上双方都清晰且可辨）
+    // 预计算调色板查表，替代原每帧对象字面量分配
     const palette = options.isPlayer
-      ? { main: '#16130f', dim: '#2d2b28', limb: '#33312e' }
-      : options.enemyType === 'INK_BOMBER'
-        ? { main: '#6b3410', dim: '#7c4520', limb: '#8a5a30' }
-        : options.enemyType === 'INK_SHIELD_GUARD'
-          ? { main: '#3f4756', dim: '#4b5563', limb: '#5b6572' }
-          : options.enemyType === 'INK_SUMMONER'
-            ? { main: '#3d5a40', dim: '#486b4c', limb: '#557d5a' }
-            : options.enemyType === 'INK_CRANE'
-              ? { main: '#2f4858', dim: '#3c5a6e', limb: '#4a6b80' }
-              : options.enemyType === 'INK_TURTLE'
-                ? { main: '#3b3a36', dim: '#4a4843', limb: '#585650' }
-                : options.enemyType === 'INK_DRUNKARD'
-                  ? { main: '#5b2333', dim: '#6d3243', limb: '#7d4052' }
-                  : { main: '#54241a', dim: '#6b3226', limb: '#7a4132' };
+      ? BONE_PALETTES.PLAYER
+      : BONE_PALETTES[options.enemyType ?? ''] ?? BONE_PALETTES.DEFAULT;
     const mainColor = palette.main;
     ctx.strokeStyle = mainColor;
     ctx.fillStyle = mainColor;
