@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { RotateCcw, Award, Skull, Infinity as InfinityIcon, Crown, Swords, Zap, Timer, ScrollText } from 'lucide-react';
+import { RotateCcw, Award, Skull, Infinity as InfinityIcon, Crown, Swords, Zap, Timer, ScrollText, Feather } from 'lucide-react';
 import { RunStats } from '../types/game';
 import { formatDuration } from '../utils/storage';
 import inkSeal from '@/src/assets/images/title_seal.png';
@@ -17,6 +17,34 @@ interface GameOverModalProps {
   onContinueEndless?: () => void;
 }
 
+/**
+ * 收笔小结局：根据本局战况生成一段三段式水墨尾声，
+ * 让主动结束的玩家「有始有终」——每一局的收笔都不同。
+ */
+const buildEpilogue = (s: RunStats): { middle: string; flourish: string | null } => {
+  let middle: string;
+  if (s.wave <= 3) {
+    middle = '初执笔墨，锋芒未露。此番于从容处收笔，不是退场，而是给来日的自己留一分余地——江湖不急，来日方长。';
+  } else if (s.wave <= 9) {
+    middle = `数折鏖战，笔意渐成。${s.kills >= 40 ? '笔下散去的妖墨已逾四十之数，' : ''}妖墨退散处，茶楼话本里已开始流传你的名号。`;
+  } else if (s.wave <= 14) {
+    middle = '十折之上，宗师侧目。此局不问胜负——收放自如，方是武道真意。';
+  } else {
+    middle = '十五折尽，你甚至往妖墨深渊更深处走过一遭。这一卷墨痕，已足以传抄百年。';
+  }
+
+  let flourish: string | null = null;
+  if (s.maxCombo >= 30) {
+    flourish = '连招如笔走龙蛇，一气呵成，观者无不动容。';
+  } else if (s.affixes.length >= 6) {
+    flourish = `一身词章满腹（参悟 ${s.affixes.length} 道），皆是此行注脚。`;
+  } else if (s.bossKills >= 2) {
+    flourish = '宗师亦曾伏于你的笔下，纵是收笔，也收得掷地有声。';
+  }
+
+  return { middle, flourish };
+};
+
 export const GameOverModal: React.FC<GameOverModalProps> = ({
   stats,
   isVictory,
@@ -24,6 +52,9 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   onRestart,
   onContinueEndless,
 }) => {
+  const voluntary = !isVictory && stats.voluntaryEnd === true;
+  const epilogue = voluntary ? buildEpilogue(stats) : null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
       <div className="max-w-md w-full bg-[#f4eedd] border border-[#b3a181] rounded-2xl p-7 shadow-2xl relative flex flex-col items-center text-center max-h-[92vh] overflow-y-auto">
@@ -42,20 +73,38 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               <Crown className="w-4 h-4 text-[#f4eedd]" />
             </div>
           )}
+          {voluntary && (
+            <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-[#7c5f3e] rounded-full flex items-center justify-center border-2 border-[#f4eedd]">
+              <Feather className="w-4 h-4 text-[#f4eedd]" />
+            </div>
+          )}
         </div>
 
         {/* Heading */}
         <div className="text-xs font-ink-serif text-[#85745a] tracking-widest mb-1">
-          江湖路远 · 胜败无常
+          {voluntary ? '砚中墨尽 · 此卷终章' : '江湖路远 · 胜败无常'}
         </div>
         <h2 className="text-3xl font-calligraphy text-[#2b2118] mb-2">
-          {isVictory ? '笑傲江湖 · 墨武大成' : '身陨道消 · 墨染残躯'}
+          {isVictory ? '笑傲江湖 · 墨武大成' : voluntary ? '收笔封卷 · 江湖有终' : '身陨道消 · 墨染残躯'}
         </h2>
-        <p className="text-xs text-[#85745a] font-ink-serif mb-4 leading-relaxed">
-          {isVictory
-            ? '十五折尽破，墨煞大帝亦伏于笔下！一手神妙水墨书法冠绝天下，留得赫赫威名。'
-            : '气血耗尽，虽败犹荣。武道一途重在磨砺心性，重整旗鼓再战江湖！'}
-        </p>
+        {voluntary ? (
+          /* 收笔小结局：三段式水墨尾声，让这局故事有始有终 */
+          <div className="w-full mb-4 px-4 py-3 bg-[#ece3cd] rounded-xl border border-[#c4b494] relative">
+            <div className="absolute top-2 right-3 text-[9px] font-ink-serif text-[#937f60] tracking-[0.4em]">卷尾</div>
+            <div className="text-[13px] font-ink-serif text-[#4a3c2a] leading-relaxed text-left">
+              <p className="mb-1.5">砚中墨尽，笔锋归鞘。</p>
+              <p className="mb-1.5">{epilogue?.middle}</p>
+              {epilogue?.flourish && <p className="mb-1.5">{epilogue.flourish}</p>}
+              <p className="text-[#85745a]">封卷之际，墨香犹在。江湖路远，笔落之处，后会有期。</p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-[#85745a] font-ink-serif mb-4 leading-relaxed">
+            {isVictory
+              ? '十五折尽破，墨煞大帝亦伏于笔下！一手神妙水墨书法冠绝天下，留得赫赫威名。'
+              : '气血耗尽，虽败犹荣。武道一途重在磨砺心性，重整旗鼓再战江湖！'}
+          </p>
+        )}
 
         {/* New record badge */}
         {isNewRecord && stats.score > 0 && (
@@ -68,7 +117,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         {/* Core stats: wave + score */}
         <div className="grid grid-cols-2 gap-3 w-full mb-3 p-4 bg-[#ece3cd] rounded-xl border border-[#c4b494]">
           <div className="text-center">
-            <div className="text-[11px] font-ink-serif text-[#85745a]">{isVictory ? '问鼎关卡' : '止步关卡'}</div>
+            <div className="text-[11px] font-ink-serif text-[#85745a]">{isVictory ? '问鼎关卡' : voluntary ? '行至关卡' : '止步关卡'}</div>
             <div className="text-xl font-calligraphy text-[#2b2118] mt-0.5">
               第{stats.wave}折
             </div>

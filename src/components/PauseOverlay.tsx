@@ -3,11 +3,12 @@
  */
 
 import React from 'react';
-import { Play, RotateCcw, Home, ScrollText } from 'lucide-react';
+import { Play, RotateCcw, Home, ScrollText, Feather } from 'lucide-react';
 
 interface PauseOverlayProps {
   onResume: () => void;
   onRestart: () => void;
+  onEndRun: () => void;
   onBackToTitle: () => void;
   waveTitle: string;
   score: number;
@@ -16,6 +17,7 @@ interface PauseOverlayProps {
 export const PauseOverlay: React.FC<PauseOverlayProps> = ({
   onResume,
   onRestart,
+  onEndRun,
   onBackToTitle,
   waveTitle,
   score,
@@ -57,6 +59,14 @@ export const PauseOverlay: React.FC<PauseOverlayProps> = ({
           </button>
 
           <button
+            onClick={onEndRun}
+            className="flex items-center justify-center gap-2 w-full py-2.5 bg-[#e7ddc4] hover:bg-[#e0d3b2] text-[#4a3c2a] font-ink-serif text-sm rounded-xl border border-[#b3a181] transition-colors cursor-pointer"
+          >
+            <Feather className="w-4 h-4 text-[#7c5f3e]" />
+            <span>就此收笔 · 看结局</span>
+          </button>
+
+          <button
             onClick={onBackToTitle}
             className="flex items-center justify-center gap-2 w-full py-2.5 bg-[#ded3b8] hover:bg-[#d8c9aa] text-[#4a3c2a] font-ink-serif text-sm rounded-xl border border-[#b3a181] transition-colors cursor-pointer"
           >
@@ -67,7 +77,7 @@ export const PauseOverlay: React.FC<PauseOverlayProps> = ({
 
         <div className="mt-5 flex items-center gap-1.5 text-[10px] font-ink-serif text-[#937f60]">
           <ScrollText className="w-3 h-3" />
-          <span>战斗随时可暂停 · 进度不会丢失</span>
+          <span>收笔可留下战绩与一段江湖尾声 · 进度不会白费</span>
         </div>
       </div>
     </div>

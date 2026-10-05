@@ -33,6 +33,7 @@ export default function App() {
   const [waveTitle, setWaveTitle] = useState<string>('第一折 · 墨卒现世');
   const [enemiesLeft, setEnemiesLeft] = useState<number>(6);
   const [combo, setCombo] = useState<number>(0);
+  const [score, setScore] = useState<number>(0);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [volume, setVolume] = useState<number>(80);
   const [recentGesture, setRecentGesture] = useState<GestureResult | null>(null);
@@ -55,18 +56,16 @@ export default function App() {
   const [isVictory, setIsVictory] = useState<boolean>(false);
   const [records, setRecords] = useState<PersistentRecords>(() => loadRecords());
   const [newRecord, setNewRecord] = useState<boolean>(false);
+  // 本局难度：重开一局时按同难度重置初始血量（此前重开丢失难度加成，EASY/HARD 回退 120）
+  const [difficulty, setDifficulty] = useState<'EASY' | 'NORMAL' | 'HARD'>('NORMAL');
 
   // Initialize Canvas and Game Engine
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const handleResize = () => {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-      if (engineRef.current) {
-        engineRef.current.setSize(width, height);
-      }
+    const applySize = () => {
+      engineRef.current?.setSize(window.innerWidth, window.innerHeight);
     };
 
     const engine = new GameEngine(canvas, {
@@ -95,6 +94,9 @@ export default function App() {
       },
       onComboChange: (newCombo) => {
         setCombo(newCombo);
+      },
+      onScoreChange: (newScore) => {
+        setScore(newScore);
       },
       onGestureRecognized: (gesture) => {
         setRecentGesture(gesture);
@@ -132,11 +134,18 @@ export default function App() {
     });
 
     engineRef.current = engine;
-    handleResize();
+    applySize(); // 首帧立即定尺寸，后续 resize 防抖（移动端旋转/地址栏伸缩高频触发，
+    // 每次都重建离屏图层缓存会掉帧）
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+    const handleResize = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(applySize, 120);
+    };
     window.addEventListener('resize', handleResize);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      window.clearTimeout(resizeTimer);
       // destroy = stop + 移除全部引擎事件监听：防组件卸载后僵尸监听器持有整个引擎（内存泄漏）
       engine.destroy();
     };
@@ -149,21 +158,16 @@ export default function App() {
     return () => clearTimeout(t);
   }, [banner]);
 
-  const handleStartGame = (difficulty: 'EASY' | 'NORMAL' | 'HARD') => {
-    if (!engineRef.current) return;
+  // 按难度应用初始血量（开局与重开共用；此前重开不重设，EASY/HARD 难度加成丢失）
+  const applyDifficultyHp = (d: 'EASY' | 'NORMAL' | 'HARD') => {
     const engine = engineRef.current;
-    sound.unlock();
-    engine.resetGame();
-    engine.setDifficulty(difficulty);
-    engine.markRunStarted();
-
-    // Adjust based on difficulty
-    if (difficulty === 'EASY') {
+    if (!engine) return;
+    if (d === 'EASY') {
       engine.player.hp = 180;
       engine.player.maxHp = 180;
       setHp(180);
       setMaxHp(180);
-    } else if (difficulty === 'HARD') {
+    } else if (d === 'HARD') {
       engine.player.hp = 90;
       engine.player.maxHp = 90;
       setHp(90);
@@ -172,6 +176,17 @@ export default function App() {
       setHp(engine.player.hp);
       setMaxHp(engine.player.maxHp);
     }
+  };
+
+  const handleStartGame = (d: 'EASY' | 'NORMAL' | 'HARD') => {
+    if (!engineRef.current) return;
+    const engine = engineRef.current;
+    sound.unlock();
+    engine.resetGame();
+    engine.setDifficulty(d);
+    engine.markRunStarted();
+    setDifficulty(d);
+    applyDifficultyHp(d);
 
     setShield(0);
     setShieldMax(0);
@@ -186,7 +201,9 @@ export default function App() {
     if (!engineRef.current) return;
     const engine = engineRef.current;
     engine.resetGame();
+    engine.setDifficulty(difficulty); // resetGame 会重建 player，难度同步重设
     engine.markRunStarted();
+    applyDifficultyHp(difficulty);
     setActiveAffixes([]);
     setBossInfo(null);
     setIsPaused(false);
@@ -227,18 +244,24 @@ export default function App() {
     }
 
     setActiveAffixes([...player.affixes]);
-    engine.isPaused = false;
+    engine.confirmAffixPick(); // 清弹窗锁 + 恢复战斗（同步 onPauseChange）
     setGameState('PLAYING');
 
-    // Advance to next wave
-    engine.startWave(wave + 1);
+    // Advance to next wave（用引擎权威波号，防 React state 闭包过期导致跳波/重波）
+    engine.startWave(engine.wave + 1);
   };
 
   const handleRerollAffixes = () => {
     if (!engineRef.current || rerollsLeft <= 0) return;
-    const newChoices = drawRandomAffixes(engineRef.current.player.affixes, 3, wave);
+    const engine = engineRef.current;
+    const newChoices = drawRandomAffixes(engine.player.affixes, 3, engine.wave);
     setRoguelikeChoices(newChoices);
     setRerollsLeft((n) => n - 1);
+  };
+
+  /** 就此收笔：暂停菜单「结束本局」→ 保留战绩并展示收笔小结局 */
+  const handleEndRun = () => {
+    engineRef.current?.endRunVoluntarily();
   };
 
   const handleToggleMute = () => {
@@ -303,7 +326,7 @@ export default function App() {
           waveTitle={waveTitle}
           enemiesLeft={enemiesLeft}
           combo={combo}
-          score={engineRef.current?.score ?? 0}
+          score={score}
           isMuted={isMuted}
           volume={volume}
           onVolumeChange={handleVolumeChange}
@@ -375,9 +398,10 @@ export default function App() {
         <PauseOverlay
           onResume={handleTogglePause}
           onRestart={handleRestart}
+          onEndRun={handleEndRun}
           onBackToTitle={handleBackToTitle}
           waveTitle={waveTitle}
-          score={engineRef.current?.score ?? 0}
+          score={score}
         />
       )}
 

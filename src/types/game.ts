@@ -368,6 +368,7 @@ export interface RunStats {
   score: number;
   wave: number;
   affixes: Affix[];
+  voluntaryEnd?: boolean; // 玩家主动收笔（暂停菜单「结束本局」）：结算展示收笔小结局
 }
 
 // localStorage 持久记录

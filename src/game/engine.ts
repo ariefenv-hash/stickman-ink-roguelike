@@ -58,6 +58,7 @@ export interface GameEngineCallbacks {
   onGestureRecognized: (gesture: GestureResult) => void;
   onWaveCleared: (affixes: Affix[]) => void;
   onGameOver: (stats: RunStats, isVictory: boolean) => void;
+  onScoreChange?: (score: number) => void;
   onPauseChange: (paused: boolean) => void;
   onControlModeChange?: (mode: ControlMode) => void;
   /** 觉醒槽变化（0~100，满槽可释放「万墨归宗」） */
@@ -178,6 +179,10 @@ export class GameEngine {
   public runEnded: boolean = false;
   public endlessMode: boolean = false;
   public difficulty: Difficulty = 'NORMAL';
+  // 词条三选一弹窗挂起中：封ESC暂停/恢复，防弹窗底下游戏照跑、玩家被看不见的敌人打死
+  private affixPickPending: boolean = false;
+  // 玩家主动收笔（暂停菜单「结束本局」）：结算时给出收笔小结局
+  private voluntaryEnd: boolean = false;
 
   // 同屏存活妖墨上限：无尽模式后期防生成堆积压垮帧率（Boss 本体不受限）
   private readonly maxAliveEnemies = 22;
@@ -200,6 +205,7 @@ export class GameEngine {
   private lastInkEmitted: number = -1;
   private lastShieldEmitted: number = -1;
   private lastBossEmitted: string = '';
+  private lastScoreEmitted: number = -1;
   private activeBoss: EnemyEntity | null = null; // Boss 引用缓存：免每帧 enemies.find 扫描+闭包分配
 
   constructor(canvas: HTMLCanvasElement, callbacks: GameEngineCallbacks) {
@@ -437,6 +443,9 @@ export class GameEngine {
   /** 暂停/继续（ESC 或按钮），战斗中才可暂停 */
   public togglePause(): boolean {
     if (this.runEnded) return this.isPaused;
+    // 词条三选一弹窗挂起时禁止 ESC 翻动暂停态：否则弹窗底下战斗照跑，
+    // 玩家看不见敌意却照常掉血（隐性状态机漏洞，与无尽入口死机同源）
+    if (this.affixPickPending) return this.isPaused;
     this.isPaused = !this.isPaused;
     if (this.isPaused) {
       this.resetTouches();
@@ -466,11 +475,21 @@ export class GameEngine {
     this.difficulty = d;
   }
 
+  /** 词条选定，恢复战斗（清弹窗挂起锁，与 onWaveCleared 成对） */
+  public confirmAffixPick() {
+    this.affixPickPending = false;
+    this.isPaused = false;
+    this.renderDirty = true;
+    this.callbacks.onPauseChange(false);
+  }
+
   /** 胜利后进入无尽模式继续征战 */
   public continueEndless() {
     this.endlessMode = true;
     this.runEnded = false;
     this.isPaused = false;
+    this.affixPickPending = false;
+    this.voluntaryEnd = false;
     // 清掉终折 Boss 战残留（未落地的墨雨预警圈/震地锁点/突进锁点等），
     // 防止陈旧技能判定泄入无尽第一折造成无源伤害或画面异常
     this.clearScheduled();
@@ -555,6 +574,24 @@ export class GameEngine {
     this.telegraphs = [];
   }
 
+  /** 主动收笔：暂停菜单「结束本局」，保留完整战绩并触发收笔小结局结算 */
+  public endRunVoluntarily() {
+    if (this.runEnded || !this.hasStartedRun) return;
+    this.runEnded = true;
+    this.affixPickPending = false;
+    this.voluntaryEnd = true;
+    // 清掉未触发的调度（词条抽取/胜利结算/Boss 技能回调等），防收笔后弹窗串台
+    this.clearScheduled();
+    this.pendingSlam = null;
+    this.pendingCharge = null;
+    this.isPaused = true;
+    this.resetTouches();
+    sound.stopHeartbeat();
+    sound.stopAmbientBgm(); // 故事终了，世界归于寂静（重开/回标题时由 resetGame 恢复 BGM）
+    this.renderDirty = true;
+    this.callbacks.onGameOver(this.getRunStats(), false);
+  }
+
   public resetGame() {
     this.player = this.createInitialPlayer();
     this.enemies = [];
@@ -580,6 +617,8 @@ export class GameEngine {
     this.isPaused = false;
     this.runEnded = false;
     this.endlessMode = false;
+    this.affixPickPending = false;
+    this.voluntaryEnd = false;
     this.hurtFlashTimer = 0;
     this.runStats = {
       kills: 0, maxCombo: 0, eliteKills: 0, bossKills: 0,
@@ -600,6 +639,7 @@ export class GameEngine {
     this.emitInk();
     this.emitShield(true);
     this.callbacks.onComboChange(0);
+    this.emitScore(true); // 分数归零同步 UI（防重开后残留旧分）
     this.startWave(1);
   }
 
@@ -610,6 +650,7 @@ export class GameEngine {
       score: this.score,
       wave: this.wave,
       affixes: [...this.player.affixes],
+      voluntaryEnd: this.voluntaryEnd,
     };
   }
 
@@ -618,6 +659,15 @@ export class GameEngine {
     const comboMult = 1 + Math.min(50, this.player.comboCount) * 0.02;
     this.score += Math.round(base * comboMult);
     this.runStats.score = this.score;
+    this.emitScore();
+  }
+
+  /** 功绩值变化同步 UI（此前 HUD 分数仅在血/墨等其它状态更新时被顺带刷新，明显滞后） */
+  private emitScore(force: boolean = false) {
+    if (!this.callbacks.onScoreChange) return;
+    if (!force && this.score === this.lastScoreEmitted) return;
+    this.lastScoreEmitted = this.score;
+    this.callbacks.onScoreChange(this.score);
   }
 
   // --- 觉醒技「万墨归宗」 ---
@@ -2887,6 +2937,8 @@ export class GameEngine {
 
       // Trigger Roguelike 3-card pick
       this.schedule(1.0, () => {
+        // 挂起弹窗锁：封 ESC 暂停/恢复（弹窗底下战斗照跑会隐形掉血）
+        this.affixPickPending = true;
         const choices = drawRandomAffixes(player.affixes, 3, this.wave);
         this.callbacks.onWaveCleared(choices);
       });
