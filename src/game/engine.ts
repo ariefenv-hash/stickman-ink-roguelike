@@ -471,6 +471,11 @@ export class GameEngine {
     this.endlessMode = true;
     this.runEnded = false;
     this.isPaused = false;
+    // 清掉终折 Boss 战残留（未落地的墨雨预警圈/震地锁点/突进锁点等），
+    // 防止陈旧技能判定泄入无尽第一折造成无源伤害或画面异常
+    this.clearScheduled();
+    this.pendingSlam = null;
+    this.pendingCharge = null;
     sound.startAmbientBgm();
     this.renderDirty = true;
     this.callbacks.onPauseChange(false);
@@ -2867,9 +2872,13 @@ export class GameEngine {
       // 通关胜利判定：击败终折 Boss（非无尽模式）
       if (this.wave >= VICTORY_WAVE && !this.endlessMode) {
         this.runEnded = true;
-        this.isPaused = true;
         sound.stopHeartbeat();
+        // [修复·无尽入口死机] 不可先 isPaused=true 再 schedule——暂停会冻结
+        // 暂停安全调度器，胜利结算回调永不执行，15 折通关画面永久定格
+        // （玩家实测「15 波结束想开启无尽死机」）。与死亡结算同套路：
+        // 先让世界放完 0.6s 庆功镜头（runEnded 已挡伤害），回调内再暂停并弹结算。
         this.schedule(0.6, () => {
+          this.isPaused = true;
           sound.playVictory();
           this.callbacks.onGameOver(this.getRunStats(), true);
         });
