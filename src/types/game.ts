@@ -371,6 +371,9 @@ export interface RunStats {
   voluntaryEnd?: boolean; // 玩家主动收笔（暂停菜单「结束本局」）：结算展示收笔小结局
 }
 
+// 难度等级（引擎与存档共用；engine.ts 保留 re-export）
+export type Difficulty = 'EASY' | 'NORMAL' | 'HARD';
+
 // localStorage 持久记录
 export interface PersistentRecords {
   highScore: number;
@@ -379,6 +382,35 @@ export interface PersistentRecords {
   totalRuns: number;
   victories: number;
   lastPlayedAt: number;
+}
+
+/** 单局进度快照：暂停/波次开始/切后台时自动落盘，杀后台后可恢复（波内敌人重刷） */
+export interface RunSnapshot {
+  version: number;            // 快照格式版本（不匹配即弃用）
+  savedAt: number;            // 存档时间戳
+  elapsedSec: number;         // 本局已生存时长（恢复时补回 runStartTime）
+  wave: number;               // 恢复后从该折重新开打
+  score: number;
+  difficulty: Difficulty;
+  endlessMode: boolean;
+  awakening: number;          // 觉醒槽进度（上限恒 100）
+  stats: {                    // 结算累计（防恢复后击杀数归零）
+    kills: number;
+    maxCombo: number;
+    eliteKills: number;
+    bossKills: number;
+  };
+  player: {
+    hp: number;
+    maxHp: number;
+    ink: number;
+    maxInk: number;
+    shield: number;
+    shieldMax: number;
+    reviveUsed: boolean;
+    pos: Vec3;
+    affixes: Affix[];
+  };
 }
 
 // Boss 顶部血条信息

@@ -18,6 +18,7 @@ import {
   BossTier,
   ControlMode,
   DashGhost,
+  Difficulty,
   EliteInfo,
   EliteModifier,
   EnemyEntity,
@@ -29,6 +30,7 @@ import {
   InkSlash,
   PlayerEntity,
   Projectile,
+  RunSnapshot,
   RunStats,
   ShockRing,
   SlashLink,
@@ -39,7 +41,7 @@ import {
 /** 通关折数（击败该折 Boss 后达成「墨武大成」） */
 export const VICTORY_WAVE = 15;
 
-export type Difficulty = 'EASY' | 'NORMAL' | 'HARD';
+export type { Difficulty };
 
 const DIFFICULTY_TUNING: Record<Difficulty, { enemyHp: number; enemyDmg: number; spawnRate: number }> = {
   EASY: { enemyHp: 0.85, enemyDmg: 0.75, spawnRate: 1.25 },
@@ -63,6 +65,8 @@ export interface GameEngineCallbacks {
   onControlModeChange?: (mode: ControlMode) => void;
   /** 觉醒槽变化（0~100，满槽可释放「万墨归宗」） */
   onAwakeningChange?: (value: number, maxValue: number) => void;
+  /** 自动存档：暂停时 / 每折开战时触发，App 层落盘 localStorage */
+  onAutoSave?: (snapshot: RunSnapshot) => void;
 }
 
 export class GameEngine {
@@ -183,6 +187,8 @@ export class GameEngine {
   private affixPickPending: boolean = false;
   // 玩家主动收笔（暂停菜单「结束本局」）：结算时给出收笔小结局
   private voluntaryEnd: boolean = false;
+  // resetGame 内抑制波次自动存：回标题/重开时不能把玩家「续战第N折」的存档点覆盖成重置后的第1折
+  private suppressAutoSave: boolean = false;
 
   // 同屏存活妖墨上限：无尽模式后期防生成堆积压垮帧率（Boss 本体不受限）
   private readonly maxAliveEnemies = 22;
@@ -451,6 +457,8 @@ export class GameEngine {
       this.resetTouches();
       sound.stopHeartbeat();
       sound.stopAmbientBgm();
+      // 暂停即存：玩家可能直接杀后台而非退到后台，此刻快照就是最后恢复点
+      if (this.hasStartedRun) this.callbacks.onAutoSave?.(this.exportSnapshot());
     } else {
       sound.startAmbientBgm();
     }
@@ -592,7 +600,123 @@ export class GameEngine {
     this.callbacks.onGameOver(this.getRunStats(), false);
   }
 
+  /**
+   * 导出单局进度快照（暂停/波次开战/切后台时由 App 层落盘）。
+   * 战场实体（敌人/弹幕/特效）不序列化——恢复粒度为「该折开头重打」，
+   * 只保留玩家成长与结算累计，肉鸽标准做法且天然规避陈旧实体泄漏。
+   */
+  public exportSnapshot(): RunSnapshot {
+    const p = this.player;
+    return {
+      version: 1,
+      savedAt: Date.now(),
+      elapsedSec: (performance.now() - this.runStartTime) / 1000,
+      wave: this.wave,
+      score: this.score,
+      difficulty: this.difficulty,
+      endlessMode: this.endlessMode,
+      awakening: this.awakening,
+      stats: {
+        kills: this.runStats.kills,
+        maxCombo: this.runStats.maxCombo,
+        eliteKills: this.runStats.eliteKills,
+        bossKills: this.runStats.bossKills,
+      },
+      player: {
+        hp: p.hp,
+        maxHp: p.maxHp,
+        ink: p.ink,
+        maxInk: p.maxInk,
+        shield: p.shield,
+        shieldMax: p.shieldMax,
+        reviveUsed: p.reviveUsed,
+        pos: { ...p.pos },
+        affixes: p.affixes.map((a) => ({ ...a })),
+      },
+    };
+  }
+
+  /**
+   * 从快照恢复单局：玩家成长/词条/计分/难度/无尽标记全量还原，
+   * 战场清空后从快照波次重新开打（startWave 重刷该折敌人并自动落盘新存档点）。
+   */
+  public restoreFromSnapshot(snap: RunSnapshot) {
+    if (snap.version !== 1) return;
+    this.player = this.createInitialPlayer();
+    const p = this.player;
+    p.hp = Math.max(1, snap.player.hp);
+    p.maxHp = Math.max(1, snap.player.maxHp);
+    p.hp = Math.min(p.hp, p.maxHp);
+    p.ink = Math.min(Math.max(0, snap.player.ink), snap.player.maxInk || 100);
+    p.maxInk = snap.player.maxInk || 100;
+    p.shield = Math.min(Math.max(0, snap.player.shield), snap.player.shieldMax || 0);
+    p.shieldMax = snap.player.shieldMax || 0;
+    p.reviveUsed = !!snap.player.reviveUsed;
+    p.pos = { ...snap.player.pos };
+    p.affixes = (snap.player.affixes || []).map((a) => ({ ...a }));
+
+    // 清空战场残留（快照不含敌人/特效，防陈旧实体泄入恢复局）
+    this.enemies = [];
+    this.activeBoss = null;
+    this.projectiles = [];
+    this.particles = [];
+    this.slashLinks = [];
+    this.floatingTexts = [];
+    this.dashGhosts = [];
+    this.activeStroke = [];
+    this.inkSlashes = [];
+    this.groundDecals = [];
+    this.shockRings = [];
+    this.clearScheduled();
+    this.pendingSlam = null;
+    this.pendingCharge = null;
+    this.slowMotionTimer = 0;
+    this.slowMoVis = 0;
+    this.zoomPunch = 0;
+    this.inkEdgeTimer = 0;
+    this.hurtFlashTimer = 0;
+
+    this.wave = snap.wave;
+    this.score = snap.score;
+    this.difficulty = snap.difficulty;
+    this.endlessMode = !!snap.endlessMode;
+    this.awakening = Math.min(this.awakeningMax, Math.max(0, snap.awakening || 0));
+    this.runStats = {
+      kills: snap.stats?.kills || 0,
+      maxCombo: snap.stats?.maxCombo || 0,
+      eliteKills: snap.stats?.eliteKills || 0,
+      bossKills: snap.stats?.bossKills || 0,
+      timeSurvived: snap.elapsedSec || 0,
+      score: snap.score,
+      wave: snap.wave,
+      affixes: [...p.affixes],
+      voluntaryEnd: false,
+    };
+    // 生存计时回拨：恢复前已生存时长计入本局总时长
+    this.runStartTime = performance.now() - (snap.elapsedSec || 0) * 1000;
+    this.isWaveClearing = false;
+    this.isPaused = false;
+    this.runEnded = false;
+    this.affixPickPending = false;
+    this.voluntaryEnd = false;
+    this.hasStartedRun = true;
+
+    // 全量同步 UI
+    this.emitHp();
+    this.emitInk();
+    this.emitShield(true);
+    this.emitScore(true);
+    this.emitAwakening(true);
+    this.callbacks.onBossUpdate(null);
+    this.callbacks.onComboChange(0);
+    sound.stopHeartbeat();
+    sound.startAmbientBgm();
+    this.renderDirty = true;
+    this.startWave(snap.wave); // 重刷该折敌人（末尾会自动落盘新的存档点）
+  }
+
   public resetGame() {
+    this.suppressAutoSave = true; // resetGame 内的 startWave(1) 不落盘（防覆盖玩家续战存档点）
     this.player = this.createInitialPlayer();
     this.enemies = [];
     this.activeBoss = null;
@@ -641,6 +765,7 @@ export class GameEngine {
     this.callbacks.onComboChange(0);
     this.emitScore(true); // 分数归零同步 UI（防重开后残留旧分）
     this.startWave(1);
+    this.suppressAutoSave = false;
   }
 
   public getRunStats(): RunStats {
@@ -826,6 +951,10 @@ export class GameEngine {
     this.callbacks.onWaveChange(this.wave, this.waveTitle, this.totalEnemiesInWave - this.enemiesKilledInWave);
     this.callbacks.onWaveBanner(title, isBossWave);
     if (isBossWave) sound.playBossWarn();
+    // 每折开战自动存档：波内阵亡/杀后台后可从本折开头续战
+    if (this.hasStartedRun && !this.runEnded && !this.suppressAutoSave) {
+      this.callbacks.onAutoSave?.(this.exportSnapshot());
+    }
   }
 
   private getChineseNumeral(n: number): string {

@@ -5,16 +5,20 @@ import inkSeal from '@/src/assets/images/title_seal.png';
  */
 
 import React, { useState } from 'react';
-import { Play, BookOpen, Trophy, Swords, Landmark, Crown } from 'lucide-react';
+import { Play, BookOpen, Trophy, Swords, Landmark, Crown, Save, Feather } from 'lucide-react';
 import { PersistentRecords } from '../types/game';
 
 interface TitleMenuProps {
   onStart: (difficulty: 'EASY' | 'NORMAL' | 'HARD') => void;
   onOpenManual: () => void;
+  onOpenSaveManager: () => void;
+  /** 有未完成征战认领时展示「续战」入口 */
+  onResumeRun?: () => void;
+  resumeWave?: number;
   records: PersistentRecords;
 }
 
-export const TitleMenu: React.FC<TitleMenuProps> = ({ onStart, onOpenManual, records }) => {
+export const TitleMenu: React.FC<TitleMenuProps> = ({ onStart, onOpenManual, onOpenSaveManager, onResumeRun, resumeWave, records }) => {
   const [difficulty, setDifficulty] = useState<'EASY' | 'NORMAL' | 'HARD'>('NORMAL');
 
   const hasRecords = records.totalRuns > 0;
@@ -129,22 +133,49 @@ export const TitleMenu: React.FC<TitleMenuProps> = ({ onStart, onOpenManual, rec
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
-          <button
-            onClick={() => onStart(difficulty)}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-6 bg-[#b91c1c] hover:bg-[#991b1b] text-[#f8f0dc] font-calligraphy text-lg rounded-xl transition-all shadow-lg shadow-[#b91c1c]/25 cursor-pointer w-full"
-          >
-            <Play className="w-5 h-5 fill-current" />
-            <span>执笔入局 · 开战</span>
-          </button>
+        <div className="flex flex-col w-full gap-2.5">
+          {onResumeRun && (
+            <button
+              onClick={onResumeRun}
+              className="flex items-center justify-center gap-2 py-3 px-6 bg-[#1a1611] hover:bg-[#2b2118] text-[#f0e6c8] font-calligraphy text-lg rounded-xl transition-all shadow-lg shadow-black/40 cursor-pointer w-full border border-[#8a6a3a]/60"
+            >
+              <Feather className="w-5 h-5 text-[#d9b96c]" />
+              <span>
+                续战 · 第{resumeWave ?? 1}折
+              </span>
+              <span className="text-[10px] font-ink-serif opacity-70 tracking-widest">— 未竟之局 —</span>
+            </button>
+          )}
 
-          <button
-            onClick={onOpenManual}
-            className="flex items-center justify-center gap-1.5 py-3 px-5 bg-[#ded3b8] hover:bg-[#c9b995] text-[#4a3c2a] font-ink-serif text-sm rounded-xl border border-[#b3a181] transition-colors cursor-pointer w-full sm:w-auto"
-          >
-            <BookOpen className="w-4 h-4 text-[#0369a1]" />
-            <span>秘籍心法</span>
-          </button>
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+            <button
+              onClick={() => onStart(difficulty)}
+              className="flex-1 flex items-center justify-center gap-2 py-3 px-6 bg-[#b91c1c] hover:bg-[#991b1b] text-[#f8f0dc] font-calligraphy text-lg rounded-xl transition-all shadow-lg shadow-[#b91c1c]/25 cursor-pointer w-full"
+            >
+              <Play className="w-5 h-5 fill-current" />
+              <span>执笔入局 · 开战</span>
+            </button>
+
+            <button
+              onClick={onOpenManual}
+              className="flex items-center justify-center gap-1.5 py-3 px-5 bg-[#ded3b8] hover:bg-[#c9b995] text-[#4a3c2a] font-ink-serif text-sm rounded-xl border border-[#b3a181] transition-colors cursor-pointer w-full sm:w-auto"
+            >
+              <BookOpen className="w-4 h-4 text-[#0369a1]" />
+              <span>秘籍心法</span>
+            </button>
+
+            <button
+              onClick={onOpenSaveManager}
+              className="flex items-center justify-center gap-1.5 py-3 px-5 bg-[#ded3b8] hover:bg-[#c9b995] text-[#4a3c2a] font-ink-serif text-sm rounded-xl border border-[#b3a181] transition-colors cursor-pointer w-full sm:w-auto"
+            >
+              <Save className="w-4 h-4 text-[#b45309]" />
+              <span>存档管理</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 text-[10px] font-ink-serif text-[#937f60]">
+          暂停即存档 · 切后台自动存档 · 意外退出可从标题「续战」恢复
         </div>
       </div>
     </div>

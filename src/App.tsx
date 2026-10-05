@@ -11,10 +11,18 @@ import { AffixDrawerModal } from './components/AffixDrawerModal';
 import { GameOverModal } from './components/GameOverModal';
 import { PauseOverlay } from './components/PauseOverlay';
 import { TitleMenu } from './components/TitleMenu';
-import { Affix, BossHudInfo, ControlMode, GestureResult, RunStats } from './types/game';
+import { SaveManagerModal } from './components/SaveManagerModal';
+import { Affix, BossHudInfo, ControlMode, GestureResult, RunSnapshot, RunStats } from './types/game';
 import { drawRandomAffixes } from './game/affixes';
 import { sound } from './utils/audio';
-import { PersistentRecords, loadRecords, saveRunStats } from './utils/storage';
+import {
+  PersistentRecords,
+  clearRunSnapshot,
+  loadRecords,
+  loadRunSnapshot,
+  saveRunStats,
+  saveRunSnapshot,
+} from './utils/storage';
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -58,6 +66,9 @@ export default function App() {
   const [newRecord, setNewRecord] = useState<boolean>(false);
   // 本局难度：重开一局时按同难度重置初始血量（此前重开丢失难度加成，EASY/HARD 回退 120）
   const [difficulty, setDifficulty] = useState<'EASY' | 'NORMAL' | 'HARD'>('NORMAL');
+  // 未完成征战认领（单局进度快照）：标题界面显示「续战」入口
+  const [resumeSnapshot, setResumeSnapshot] = useState<RunSnapshot | null>(() => loadRunSnapshot());
+  const [showSaveManager, setShowSaveManager] = useState<boolean>(false);
 
   // Initialize Canvas and Game Engine
   useEffect(() => {
@@ -119,7 +130,14 @@ export default function App() {
         setNewRecord(stats.score > prev.highScore);
         const updated = saveRunStats(stats, victory);
         setRecords(updated);
+        clearRunSnapshot(); // 本局已终（阵亡/胜利/收笔），续战快照作废
+        setResumeSnapshot(null);
         setGameState('GAME_OVER');
+      },
+      /** 自动存档：暂停时 / 每折开战时（App 层落盘 localStorage） */
+      onAutoSave: (snap) => {
+        saveRunSnapshot(snap);
+        setResumeSnapshot(snap);
       },
       onPauseChange: (paused) => {
         setIsPaused(paused);
@@ -158,6 +176,28 @@ export default function App() {
     return () => clearTimeout(t);
   }, [banner]);
 
+  // 杀后台兑底存档：玩家可能不是退到后台而是直接杀掉进程/网页，
+  // visibilitychange(hidden) + pagehide 是最后的写入时机（iOS/Android 均可靠）
+  useEffect(() => {
+    const saveNow = () => {
+      const eng = engineRef.current;
+      // 引擎侧判断而非 gameState 闭包，避开陈旧 state：
+      // 局内且未结束才落盘（结算/标题态不覆盖快照）
+      if (eng && eng.hasStartedRun && !eng.runEnded) {
+        saveRunSnapshot(eng.exportSnapshot());
+      }
+    };
+    const onVisChange = () => {
+      if (document.visibilityState === 'hidden') saveNow();
+    };
+    document.addEventListener('visibilitychange', onVisChange);
+    window.addEventListener('pagehide', saveNow);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisChange);
+      window.removeEventListener('pagehide', saveNow);
+    };
+  }, []);
+
   // 按难度应用初始血量（开局与重开共用；此前重开不重设，EASY/HARD 难度加成丢失）
   const applyDifficultyHp = (d: 'EASY' | 'NORMAL' | 'HARD') => {
     const engine = engineRef.current;
@@ -182,6 +222,10 @@ export default function App() {
     if (!engineRef.current) return;
     const engine = engineRef.current;
     sound.unlock();
+    // 单槽存档语义：主动开新局即放弃旧未竟之局（标题「续战」按钮是认领旧局的正路，
+    // 防止旧档被新局首个存档点静默顶掉）
+    clearRunSnapshot();
+    setResumeSnapshot(null);
     engine.resetGame();
     engine.setDifficulty(d);
     engine.markRunStarted();
@@ -219,12 +263,28 @@ export default function App() {
     setGameState('PLAYING');
   };
 
+  /** 续战：从单局快照恢复（该折开头重打，词条/计分/难度全量还原） */
+  const handleResumeRun = () => {
+    const eng = engineRef.current;
+    if (!eng || !resumeSnapshot) return;
+    sound.unlock();
+    eng.restoreFromSnapshot(resumeSnapshot);
+    setDifficulty(resumeSnapshot.difficulty);
+    setActiveAffixes([...resumeSnapshot.player.affixes]);
+    setBossInfo(null);
+    setIsPaused(false);
+    setGameState('PLAYING');
+    eng.start(); // 已在跑则幂等
+  };
+
   const handleBackToTitle = () => {
     if (!engineRef.current) return;
     engineRef.current.isPaused = true;
     engineRef.current.resetGame();
     setIsPaused(false);
     setBossInfo(null);
+    // 重新读取快照（不主动清——玩家暂停存下的「续战第N折」应能在标题认领）
+    setResumeSnapshot(loadRunSnapshot());
     setGameState('TITLE');
   };
 
@@ -309,6 +369,9 @@ export default function App() {
         <TitleMenu
           onStart={handleStartGame}
           onOpenManual={() => setShowManual(true)}
+          onOpenSaveManager={() => setShowSaveManager(true)}
+          onResumeRun={resumeSnapshot ? handleResumeRun : undefined}
+          resumeWave={resumeSnapshot?.wave}
           records={records}
         />
       )}
@@ -408,6 +471,23 @@ export default function App() {
       {/* Martial Arts Manual Modal */}
       {showManual && (
         <ManualModal onClose={() => setShowManual(false)} />
+      )}
+
+      {/* 存档管理：记录导入导出 / 快照认领 / 清档 */}
+      {showSaveManager && (
+        <SaveManagerModal
+          records={records}
+          snapshot={resumeSnapshot}
+          onClose={() => setShowSaveManager(false)}
+          onRecordsChanged={(rec, snap) => {
+            setRecords(rec);
+            setResumeSnapshot(snap);
+          }}
+          onResumeRun={() => {
+            setShowSaveManager(false);
+            handleResumeRun();
+          }}
+        />
       )}
 
       {/* Active Affixes Inventory Modal */}
