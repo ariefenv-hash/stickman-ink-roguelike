@@ -51,27 +51,52 @@ const DIFFICULTY_TUNING: Record<Difficulty, { enemyHp: number; enemyDmg: number;
 };
 
 /**
- * 无双演武特化调参：怪海量翻倍、单体敌脆化（一刀一片的割草爽感）、
- * Boss 高频低血（每 3 阵拦路，双 Boss 同屏）、连击窗口拉长、刷怪如潮。
+ * 无双演武特化调参 v2「势如潮涌」：刷怪更密（间隔×0.26）、怪海量再升级、
+ * Boss 海每 2 阵一煞（5 阵双煞、13 阵三煞同屏）、连招链系统（变招加成）、
+ * 斩罡余波（每一击都群体波及）、墨经济宽松（杀敌回墨+墨耗减免），攻击更顺畅。
  */
 const MUSOU_TUNING = {
-  enemyHpMult: 0.72,       // 敌单体 HP 乘数（割草不卡壳）
-  bossHpMult: 0.65,        // Boss HP 额外乘数（高频 Boss 不能成为磨血拖累）
+  enemyHpMult: 0.62,       // 敌单体 HP 乘数（怪海量翻倍后单体更脆，一刀一片）
+  bossHpMult: 0.52,        // Boss HP 额外乘数（Boss 海高频登场，单体血量再压防磨血拖节奏）
   enemyDmgMult: 0.8,       // 敌伤乘数（被围殴时不至于秒死）
-  spawnIntervalMult: 0.42, // 刷怪间隔乘数（怪海如潮涌）
-  maxAlive: 28,            // 同屏存活上限（经典 22；怪海量需更高，仍受自适应画质保护）
-  waveCountBase: 8,        // 每阵怪海基数（经典 5）
-  waveCountPerWave: 4,     // 每阵递增（经典 3）
-  waveCountCap: 48,        // 阵怪数上限（经典 42）
-  bossEveryWaves: 3,       // Boss 间隔（经典每 5 折，无双每 3 阵）
-  dualBossFromWave: 9,     // 该阵起 Boss 波双 Boss 同屏
-  comboWindowSec: 5.0,     // 连击窗口（经典 3s）：怪海量下连招不断
-  gestureDmgBonus: 1.1,    // 手势伤害乘数（怪海清场效率）
-  comboDmgPerStack: 0.001, // 连击气魄：每连击 +0.1% 手势伤害（上限 100 连 +10%）
-  comboDmgCap: 100,        // 连击气魄上限连击数
-  killInk: 22,             // 击杀回墨（经典 15）：杀得多回得快，招式循环爽快
-  killInkElite: 32,        // 精英击杀回墨（经典 25）
-  awakeningPerKill: 7,     // 觉醒充能/杀（经典 6）：怪海量下大招更频繁
+  spawnIntervalMult: 0.26, // 刷怪间隔乘数（妖墨如怒潮拍岸，密不透风）
+  clusterSpawnChance: 0.5, // 簇刷概率：每次刷怪后 50% 概率同帧再补一只（成群结队）
+  clusterFromWave: 2,      // 该阵起启用簇刷
+  maxAlive: 34,            // 同屏存活上限基准（经典 22；受自适应画质档位收敛保护）
+  waveCountBase: 10,       // 每阵怪海基数（v1 为 8）
+  waveCountPerWave: 5,     // 每阵递增（v1 为 4）
+  waveCountCap: 60,        // 阵怪数上限（v1 为 48）
+  bossEveryWaves: 2,       // Boss 间隔（v1 每 3 阵 → 每 2 阵一煞，Boss 海名副其实）
+  dualBossFromWave: 5,     // 该阵起 Boss 波双煞同屏（v1 为 9）
+  tripleBossFromWave: 13,  // 该阵起 Boss 波三煞齐临（终极怪海考验）
+  eliteCap: 4,             // 每阵精英上限（v1 为 3）
+  comboWindowSec: 6.5,     // 连击窗口（v1 5s）：更宽裕的连招呼吸感
+  gestureDmgBonus: 1.18,   // 手势伤害乘数（v1 1.1：怪海清场效率再提升）
+  comboDmgPerStack: 0.002, // 连击气魄：每连击 +0.2% 手势伤害（上限 150 连 +30%）
+  comboDmgCap: 150,        // 连击气魄上限连击数（v1 100）
+  killInk: 30,             // 击杀回墨（v1 22）：杀得多回得快，招式循环永动机
+  killInkElite: 42,        // 精英击杀回墨（v1 32）
+  inkRegen: 18,            // 无双被动回墨/秒（经典 14）：墨足则招式连绵不绝
+  gestureCostMult: 0.55,   // 无双手势墨耗乘数（招式放得勤快，不能力不济卡壳）
+  awakeningPerKill: 9,     // 觉醒充能/杀（v1 7）：怪海量下大招更是源源不断
+  awakeningPerHitMult: 1.3,// 无双命中充能额外乘数
+  hitStopSec: 0.03,        // 无双命中停帧（经典 0.055）：短停帧保打击感但不粘滞
+  animSpeedMult: 0.78,     // 无双攻击动画时长乘数（收招更快，连绵如疾风）
+  aoeRangeMult: 1.3,       // 无双全体攻击横向范围乘数（横扫千军）
+  aoeRangeZMult: 1.5,      // 无双纵深范围乘数（一扫一片）
+  wakeRadius: 125,         // 斩罡余波半径：每一击荡开墨浪波及近旁妖墨
+  wakeDmgMult: 0.4,        // 斩罡余波伤害乘数（基础手势伤的 40%）
+  chainWindowSec: 1.8,     // 连招链窗口：连续出招间隔小于此值则链不断
+  chainPerSame: 1,         // 同招式连招链增量
+  chainPerDiff: 2,         // 变招增量（策略：交替不同招式链涨更快，范围/伤害滚雪球）
+  chainDmgPerStack: 0.12,  // 连招链每层 +12% 手势伤害
+  chainDmgCap: 0.72,       // 连招链伤害加成上限（+72%）
+  chainRangePerStack: 0.07,// 连招链每层 +7% 攻击范围
+  chainRangeCap: 0.5,      // 连招链范围加成上限（+50%）
+  corpseLife: 0.55,        // 无双小怪尸体消散时长（经典 0.9s）：快清场减渲染负担
+  musouRetry: 0.4,         // 拥挤保护触发后的重试间隔（经典 0.75s）
+  spawnGraceSec: 0.85,     // 无双出生宽限（经典 0.6s）：怪海密集下出生淡入更久，不被落地围欧
+  enemyAttackCdMult: 1.35, // 无双敌近战攻击冷却乘数：怪海围压但不高速轮炊，保玩家喘息空间
 };
 
 /** 无双普通阵名池：随阵号轮换，营造「杀不完的妖墨浪潮」氛围 */
@@ -226,12 +251,19 @@ export class GameEngine {
   private affixPickPending: boolean = false;
   // 玩家主动收笔（暂停菜单「结束本局」）：结算时给出收笔小结局
   private voluntaryEnd: boolean = false;
+  // --- 无双连招链系统：连续出招叠层，变招（交替不同招式）涨层更快，
+  // 链层提供伤害/范围加成，窗口超时清零（策略深度 + 割草滚雪球爽感）
+  private gestureChain: number = 0;
+  private gestureChainTimer: number = 0;
+  private lastGestureType: GestureResult['type'] | null = null;
   // resetGame 内抑制波次自动存：回标题/重开时不能把玩家「续战第N折」的存档点覆盖成重置后的第1折
   private suppressAutoSave: boolean = false;
 
-  // 同屏存活妖墨上限：无尽模式后期防生成堆积压垮帧率（Boss 本体不受限）；无双模式怪海量放宽
+  // 同屏存活妖墨上限：无尽模式后期防生成堆积压垮帧率（Boss 本体不受限）；
+  // 无双怪海基准 34，但随自适应画质档位收敛（弱机自动降怪海密度，帧率优先）
   private get maxAliveEnemies() {
-    return this.gameMode === 'MUSOU' ? MUSOU_TUNING.maxAlive : 22;
+    if (this.gameMode !== 'MUSOU') return 22;
+    return this.qualityLevel === 2 ? MUSOU_TUNING.maxAlive : this.qualityLevel === 1 ? 27 : 21;
   }
   // 暂停/结算时画面静止，仅在标记脏时重绘一帧（防移动端持续满帧渲染发热降频→卡顿）
   private renderDirty: boolean = true;
@@ -722,6 +754,10 @@ export class GameEngine {
     this.zoomPunch = 0;
     this.inkEdgeTimer = 0;
     this.hurtFlashTimer = 0;
+    // 连招链状态重置（续战不残留旧链层）
+    this.gestureChain = 0;
+    this.gestureChainTimer = 0;
+    this.lastGestureType = null;
 
     this.wave = snap.wave;
     this.score = snap.score;
@@ -791,6 +827,10 @@ export class GameEngine {
     this.endlessMode = false;
     this.affixPickPending = false;
     this.voluntaryEnd = false;
+    // 连招链状态重置（重开/回标题不残留旧链层）
+    this.gestureChain = 0;
+    this.gestureChainTimer = 0;
+    this.lastGestureType = null;
     this.hurtFlashTimer = 0;
     this.runStats = {
       kills: 0, maxCombo: 0, eliteKills: 0, bossKills: 0,
@@ -930,14 +970,17 @@ export class GameEngine {
     let count = 5 + waveNum * 3;
     let isBossWave = false;
 
-    // --- 无双演武：怪海阵次生成（无通关概念，Boss 每 3 阵拦路，双 Boss 同屏） ---
+    // --- 无双演武：怪海阵次生成（无通关概念，Boss 每隔一阵拦路，双/三煞同屏） ---
     if (this.gameMode === 'MUSOU') {
       const isMusouBoss = waveNum % MUSOU_TUNING.bossEveryWaves === 0;
-      const dualBoss = isMusouBoss && waveNum >= MUSOU_TUNING.dualBossFromWave;
-      const isEmperor = isMusouBoss && waveNum % (MUSOU_TUNING.bossEveryWaves * 5) === 0; // 每 15 阵大帝亲临
+      const tripleBoss = isMusouBoss && waveNum >= MUSOU_TUNING.tripleBossFromWave;
+      const dualBoss = isMusouBoss && !tripleBoss && waveNum >= MUSOU_TUNING.dualBossFromWave;
+      const isEmperor = isMusouBoss && waveNum % (MUSOU_TUNING.bossEveryWaves * 5) === 0; // 每 10 阵大帝亲临
       title = `无双·第${this.getChineseNumeral(waveNum)}阵 · `;
       if (isEmperor) {
         title += '墨煞大帝 · 亲临';
+      } else if (tripleBoss) {
+        title += '三煞齐临';
       } else if (dualBoss) {
         title += '双煞同临';
       } else if (isMusouBoss) {
@@ -1055,12 +1098,14 @@ export class GameEngine {
   private spawnNextEnemy(): boolean {
     if (this.enemiesSpawnedInWave >= this.totalEnemiesInWave) return true;
 
-    // Boss 波判定：经典每 5 折（含终折 15）；无双每 3 阵
+    // Boss 波判定：经典每 5 折（含终折 15）；无双每隔一阵（Boss 海）
     const isBossWave = this.gameMode === 'MUSOU'
       ? this.wave % MUSOU_TUNING.bossEveryWaves === 0
       : this.wave % 5 === 0 || this.wave === VICTORY_WAVE;
-    // 无双双 Boss：第 9 阵起 Boss 波连出两只（血量各自独享 tier 乘减）
-    const musouBossQuota = this.gameMode === 'MUSOU' && this.wave >= MUSOU_TUNING.dualBossFromWave ? 2 : 1;
+    // 无双双/三煞：第 5 阵起 Boss 波双煞同屏，第 13 阵起三煞齐临（血量各自独享 tier 乘减）
+    const musouBossQuota = this.gameMode === 'MUSOU'
+      ? (this.wave >= MUSOU_TUNING.tripleBossFromWave ? 3 : this.wave >= MUSOU_TUNING.dualBossFromWave ? 2 : 1)
+      : 1;
     // Boss 本体豁免同屏上限（否则 Boss 波开场即被拥挤保护卡住）
     const willBeBoss = isBossWave && (this.gameMode === 'MUSOU'
       ? this.enemiesSpawnedInWave < musouBossQuota
@@ -1157,9 +1202,9 @@ export class GameEngine {
     const spawnX = this.player.pos.x + spawnSide * (this.screenWidth * 0.55 + Math.random() * 80);
     const spawnZ = (Math.random() - 0.5) * 220;
 
-    // 精英词缀掷骰（第3折起，Boss波不出；无双节奏快上限放宽到 3）
+    // 精英词缀掷骰（第3折起，Boss波不出；无双节奏快上限放宽到 4）
     let elite: EliteInfo | null = null;
-    if (!isBoss && this.wave >= 3 && this.eliteCountThisWave < (this.gameMode === 'MUSOU' ? 3 : 2)) {
+    if (!isBoss && this.wave >= 3 && this.eliteCountThisWave < (this.gameMode === 'MUSOU' ? MUSOU_TUNING.eliteCap : 2)) {
       const eliteChance = Math.min(0.25, 0.1 + this.wave * 0.012);
       if (Math.random() < eliteChance) {
         elite = this.makeElite(type);
@@ -1174,10 +1219,10 @@ export class GameEngine {
   /** 敌人显示名 */
   private enemyDisplayName(type: EnemyType, isBoss: boolean): string {
     if (isBoss) {
-      // Boss 三强线：按折数分级（无双节奏提前：≥12 阵即大帝）
+      // Boss 三强线：按折数分级（无双 Boss 海节奏再加速：≥10 阵即大帝、≥5 阵宗师）
       if (this.gameMode === 'MUSOU') {
-        if (this.wave >= 12) return '墨煞大帝';
-        if (this.wave >= 6) return '墨煞宗师';
+        if (this.wave >= 10) return '墨煞大帝';
+        if (this.wave >= 5) return '墨煞宗师';
         return '墨煞先锋';
       }
       if (this.wave < 10) return '墨煞先锋';
@@ -1247,9 +1292,9 @@ export class GameEngine {
       scale = 1.0;
     } else if (type === 'INK_BOSS') {
       // Boss 三强线数值分层：先锋（快攻型）＜ 宗师（标准）＜ 大帝（终折三阶段）
-      // 无双节奏加速：tier 抬升提前（≥12 阵即大帝），双 Boss 血量另乘 0.65 防磨血拖节奏
+      // 无双 Boss 海节奏：tier 抬升提前（≥5 阵宗师、≥10 阵大帝），多煞同屏血量另乘 0.52 防磨血拖节奏
       const bossTier: BossTier = isMusou
-        ? (this.wave >= 12 ? 3 : this.wave >= 6 ? 2 : 1)
+        ? (this.wave >= 10 ? 3 : this.wave >= 5 ? 2 : 1)
         : (this.wave >= 15 ? 3 : this.wave >= 10 ? 2 : 1);
       if (bossTier === 1) {
         hp = 280 + this.wave * 50;
@@ -1312,7 +1357,7 @@ export class GameEngine {
       windupMax: 0,
       teleportCooldown: type === 'SHADOW_NINJA' ? 4 + Math.random() * 3 : undefined,
       deathTimer: 0,
-      spawnGrace: 0.6,
+      spawnGrace: this.gameMode === 'MUSOU' ? MUSOU_TUNING.spawnGraceSec : 0.6,
       bossPhase: isBoss ? 1 : undefined,
       // 三新敌专属初始化
       cranePhase: type === 'INK_CRANE' ? 'HOVER' : undefined,
@@ -1685,14 +1730,17 @@ export class GameEngine {
   private executePhantomSliceChain(targets: { enemy: EnemyEntity; eye: boolean }[], gesture: GestureResult) {
     const player = this.player;
 
-    // Ink cost
-    const inkCost = gesture.type === 'TAP' ? 6 : gesture.type === 'CIRCLE' ? 22 : 15;
+    // Ink cost（无双墨耗减免：招式循环永动机）
+    const inkCost = this.musouInk(gesture.type === 'TAP' ? 6 : gesture.type === 'CIRCLE' ? 22 : 15);
     if (player.ink < inkCost) {
       this.addFloatingText('内力不济', player.pos.x, player.pos.y + 60, '#ef4444', 1.2);
       return;
     }
     player.ink = Math.max(0, player.ink - inkCost);
     this.emitInk();
+
+    // 无双连招链登记：变招（交替不同招式）涨层更快 → 伤害/范围滚雪球
+    this.registerGestureChain(gesture.type);
 
     // Calligraphy banner display
     this.addFloatingText(`${gesture.name} · 瞬华连斩`, player.pos.x, player.pos.y + 70, '#f59e0b', 1.6, true, true);
@@ -1718,6 +1766,8 @@ export class GameEngine {
     });
 
     // 2. High-speed consecutive blitz execution through all targets (暂停安全调度)
+    // 无双：斩击间隔更短（0.06s），连续斩如疾风骤雨
+    const blitzGap = this.gameMode === 'MUSOU' ? 0.06 : 0.085;
     const comboPoses: ActionState[] = [
       'ATTACK_THRUST',
       'ATTACK_HORIZONTAL',
@@ -1728,7 +1778,7 @@ export class GameEngine {
 
     targets.forEach((target, idx) => {
       const enemy = target.enemy;
-      this.schedule(idx * 0.085, () => {
+      this.schedule(idx * blitzGap, () => {
         if (enemy.hp <= 0 && idx > 0) return;
 
         const prevPlayerPos = { ...player.pos };
@@ -1762,10 +1812,10 @@ export class GameEngine {
           });
         }
 
-        // Set dynamic martial arts animation pose
+        // Set dynamic martial arts animation pose（无双收招更快）
         player.state = comboPoses[idx % comboPoses.length];
         player.stateTimer = 0;
-        player.stateDuration = 0.28;
+        player.stateDuration = this.poseDur(0.28);
         player.isInvincible = true;
         player.invincibleTimer = 0.35;
 
@@ -1812,7 +1862,7 @@ export class GameEngine {
           enemy.vel.y = 4;
         }
 
-        this.hitStopTimer = 0.08;
+        this.hitStopTimer = this.gameMode === 'MUSOU' ? MUSOU_TUNING.hitStopSec : 0.08;
         this.cameraShake = Math.max(this.cameraShake, 12 + idx * 3);
         sound.playHit(isCrit);
         sound.playSlash('heavy');
@@ -1897,15 +1947,16 @@ export class GameEngine {
       this.addFloatingText('千斤坠 · 震岳', player.pos.x, player.pos.y + 65, '#f59e0b', 1.45, true);
     }
 
-    // Check if there are enemies nearby within auto-target attack range (~175px)
+    // Check if there are enemies nearby within auto-target attack range（无双索敌半径扩大，滑到即战）
     let nearestEnemy: EnemyEntity | null = null;
     let minEnemyDist = Infinity;
+    const autoTargetRange = this.gameMode === 'MUSOU' ? 230 : 175;
     for (const enemy of this.enemies) {
       if (enemy.hp <= 0) continue;
       const edx = enemy.pos.x - player.pos.x;
       const edz = enemy.pos.z - player.pos.z;
       const ed = Math.hypot(edx, edz);
-      if (ed < 175 && ed < minEnemyDist) {
+      if (ed < autoTargetRange && ed < minEnemyDist) {
         minEnemyDist = ed;
         nearestEnemy = enemy;
       }
@@ -1929,7 +1980,7 @@ export class GameEngine {
 
     player.state = chosenPose;
     player.stateTimer = 0;
-    player.stateDuration = 0.32;
+    player.stateDuration = this.poseDur(0.32);
     player.isInvincible = true;
     player.invincibleTimer = 0.35;
 
@@ -2014,14 +2065,17 @@ export class GameEngine {
   private executeGestureMove(res: GestureResult) {
     const player = this.player;
 
-    // Check ink cost
-    const inkCost = res.type === 'TAP' ? 8 : res.type === 'CIRCLE' ? 25 : 18;
+    // Check ink cost（无双墨耗减免：招式放得勤快）
+    const inkCost = this.musouInk(res.type === 'TAP' ? 8 : res.type === 'CIRCLE' ? 25 : 18);
     if (player.ink < inkCost) {
       this.addFloatingText('内力不济', player.pos.x, player.pos.y + 60, '#ef4444', 1.2);
       return;
     }
     player.ink = Math.max(0, player.ink - inkCost);
     this.emitInk();
+
+    // 无双连招链登记：窗口内连续出招叠层，变招涨层更快（伤害/范围滚雪球）
+    this.registerGestureChain(res.type);
 
     // Calligraphy banner display above player
     this.addFloatingText(res.name, player.pos.x, player.pos.y + 70, '#f59e0b', 1.4, true, true);
@@ -2040,7 +2094,7 @@ export class GameEngine {
       case 'TAP': {
         player.state = 'ATTACK_THRUST';
         player.stateTimer = 0;
-        player.stateDuration = 0.22;
+        player.stateDuration = this.poseDur(0.22);
         player.vel.x = player.facing * 4;
         sound.playSlash('light');
         this.spawnInkSlash(player.pos.x, player.pos.y + 24, player.pos.z, 'THRUST', player.facing, 0.8);
@@ -2058,7 +2112,7 @@ export class GameEngine {
       case 'HORIZONTAL': {
         player.state = 'ATTACK_HORIZONTAL';
         player.stateTimer = 0;
-        player.stateDuration = 0.35;
+        player.stateDuration = this.poseDur(0.35);
         player.vel.x = player.facing * 7;
         sound.playSlash('heavy');
         this.cameraShake = 7;
@@ -2073,18 +2127,19 @@ export class GameEngine {
           isGesture: true,
         });
 
-        // Blade Qi affix check
+        // Blade Qi affix check（无双剑气常驻：横扫必发剑气，波及更远）
         const hasSwordBeam = player.affixes.some((a) => a.stats.swordBeamEnabled);
-        if (hasSwordBeam || Math.random() < 0.5) {
+        const beamAlways = this.gameMode === 'MUSOU';
+        if (hasSwordBeam || beamAlways || Math.random() < 0.5) {
           this.shootProjectile({
             pos: { x: player.pos.x + player.facing * 35, y: player.pos.y + 20, z: player.pos.z },
             vel: { x: player.facing * 15, y: 0, z: 0 },
-            damage: 28 * this.getAffixDamageMultiplier() * this.getGestureDamageMultiplier(),
+            damage: (beamAlways ? 34 : 28) * this.getAffixDamageMultiplier() * this.getGestureDamageMultiplier(),
             isPlayer: true,
-            life: 0.9,
-            maxLife: 0.9,
+            life: beamAlways ? 1.1 : 0.9,
+            maxLife: beamAlways ? 1.1 : 0.9,
             type: 'SWORD_BEAM',
-            radius: 40,
+            radius: beamAlways ? 55 : 40,
           });
         }
         break;
@@ -2093,7 +2148,7 @@ export class GameEngine {
       case 'VERTICAL_DOWN': {
         player.state = 'ATTACK_VERTICAL';
         player.stateTimer = 0;
-        player.stateDuration = 0.42;
+        player.stateDuration = this.poseDur(0.42);
         sound.playSlash('heavy');
         this.cameraShake = 12;
         this.spawnInkSlash(player.pos.x, player.pos.y + 30, player.pos.z, 'VERTICAL', player.facing, 1.25);
@@ -2112,6 +2167,7 @@ export class GameEngine {
             knockbackX: player.facing * 8,
             knockbackY: 9,
             isGesture: true,
+            rearReach: -80, // 力劈震地：身后余波也受震（无双下配合范围放大成真·周身地刺）
           });
         });
         break;
@@ -2120,7 +2176,7 @@ export class GameEngine {
       case 'DIAGONAL_UP': {
         player.state = 'ATTACK_LAUNCH';
         player.stateTimer = 0;
-        player.stateDuration = 0.32;
+        player.stateDuration = this.poseDur(0.32);
         player.vel.y = 8;
         player.vel.x = player.facing * 4;
         sound.playSlash('light');
@@ -2141,7 +2197,7 @@ export class GameEngine {
       case 'CIRCLE': {
         player.state = 'ATTACK_TAICHI';
         player.stateTimer = 0;
-        player.stateDuration = 0.5;
+        player.stateDuration = this.poseDur(0.5);
         player.isInvincible = true;
         player.invincibleTimer = 0.5;
         sound.playSlash('whirlwind');
@@ -2161,17 +2217,19 @@ export class GameEngine {
           return true;
         });
 
-        // 360-degree knockback
+        // 360-degree knockback（无双太极范围扩大 130→175，伤更重：真·群体清算）
+        const taichiRadius = this.gameMode === 'MUSOU' ? 175 : 130;
+        const taichiDmg = this.gameMode === 'MUSOU' ? 42 : 35;
         for (const enemy of this.enemies) {
           const dx = enemy.pos.x - player.pos.x;
           const dz = enemy.pos.z - player.pos.z;
           const dist = Math.hypot(dx, dz);
-          if (dist < 130) {
+          if (dist < taichiRadius) {
             const angle = Math.atan2(dz, dx);
             enemy.vel.x = Math.cos(angle) * 14;
             enemy.vel.z = Math.sin(angle) * 8;
             enemy.vel.y = 5;
-            this.damageEnemy(enemy, 35 * this.getAffixDamageMultiplier() * this.getGestureDamageMultiplier(), true);
+            this.damageEnemy(enemy, taichiDmg * this.getAffixDamageMultiplier() * this.getGestureDamageMultiplier(), true);
           }
         }
         break;
@@ -2180,13 +2238,13 @@ export class GameEngine {
       case 'ZIGZAG': {
         player.state = 'ATTACK_DASH';
         player.stateTimer = 0;
-        player.stateDuration = 0.3;
+        player.stateDuration = this.poseDur(0.3);
         player.isInvincible = true;
         player.invincibleTimer = 0.35;
         sound.playDash();
 
-        // Dash forward rapidly piercing enemies
-        const dashDistance = player.facing * 220;
+        // Dash forward rapidly piercing enemies（无双闪身距离 220→320：穿越整片怪海）
+        const dashDistance = player.facing * (this.gameMode === 'MUSOU' ? 320 : 220);
         const targetX = player.pos.x + dashDistance;
 
         // Record dash trail afterimages
@@ -2236,6 +2294,47 @@ export class GameEngine {
         break;
       }
     }
+  }
+
+  /** 无双手势墨耗减免：招式放得勤快，不能力不济卡壳 */
+  private musouInk(base: number): number {
+    return this.gameMode === 'MUSOU' ? Math.round(base * MUSOU_TUNING.gestureCostMult) : base;
+  }
+
+  /** 无双攻击动画加速：收招更快，招式连绵如疾风（仅玩家攻击姿态） */
+  private poseDur(base: number): number {
+    return this.gameMode === 'MUSOU' ? base * MUSOU_TUNING.animSpeedMult : base;
+  }
+
+  /** 拥挤降特效系数：无双同屏妖墨过半时墨花粒子减量（性能兑底，视觉主体不受影响） */
+  private crowdFxScale(): number {
+    if (this.gameMode !== 'MUSOU') return 1;
+    let alive = 0;
+    for (let i = 0; i < this.enemies.length; i++) if (this.enemies[i].hp > 0) alive++;
+    return alive > 26 ? 0.5 : 1;
+  }
+
+  // --- 无双连招链系统 ---
+  /** 出招登记：窗口内连续出招叠链层，变招（交替不同招式）双倍涨层（策略：连招不重手） */
+  private registerGestureChain(type: GestureResult['type']) {
+    if (this.gameMode !== 'MUSOU') return;
+    const sameType = type === this.lastGestureType;
+    this.gestureChain = Math.min(20, this.gestureChain + (sameType ? MUSOU_TUNING.chainPerSame : MUSOU_TUNING.chainPerDiff));
+    this.lastGestureType = type;
+    this.gestureChainTimer = MUSOU_TUNING.chainWindowSec;
+    if (this.gestureChain >= 2) {
+      this.addFloatingText(`连招链 ×${this.gestureChain}`, this.player.pos.x, this.player.pos.y + 95, '#fbbf24', 1.15, false, true);
+    }
+  }
+
+  /** 连招链伤害加成（1 + 0.12×(链-1)，上限 +72%） */
+  private get chainDmgMult(): number {
+    return 1 + Math.min(MUSOU_TUNING.chainDmgCap, Math.max(0, this.gestureChain - 1) * MUSOU_TUNING.chainDmgPerStack);
+  }
+
+  /** 连招链范围加成（1 + 0.07×(链-1)，上限 +50%） */
+  private get chainRangeMult(): number {
+    return 1 + Math.min(MUSOU_TUNING.chainRangeCap, Math.max(0, this.gestureChain - 1) * MUSOU_TUNING.chainRangePerStack);
   }
 
   // --- 词条数值汇总辅助 ---
@@ -2324,9 +2423,19 @@ export class GameEngine {
     knockbackY: number;
     isGesture?: boolean;
     antiAir?: boolean; // 挑招对空：可命中高空悬停的飞白鹤
+    rearReach?: number; // 背后余波范围（千斤坠力劈震地时后方也受震）
   }) {
     const player = this.player;
+    const inMusou = this.gameMode === 'MUSOU';
+    // 无双群体性强化：攻击范围放大（横向 ×1.3 / 纵深 ×1.5），
+    // 连招链层叠进一步扩大范围（每层 +7%，上限 +50%）→ 一扫一片的割草手感
+    const rangeMult = inMusou ? MUSOU_TUNING.aoeRangeMult * this.chainRangeMult : 1;
+    const rangeZMult = inMusou ? MUSOU_TUNING.aoeRangeZMult * this.chainRangeMult : 1;
+    const rangeX = opts.rangeX * rangeMult;
+    const rangeZ = opts.rangeZ * rangeZMult;
+    const rear = opts.rearReach ?? (inMusou ? -46 : -20);
     let hitCount = 0;
+    const hitSet = new Set<EnemyEntity>(); // 斩罡余波去重：已直接命中者不再吃余波
 
     for (const enemy of this.enemies) {
       if (enemy.hp <= 0) continue;
@@ -2337,7 +2446,7 @@ export class GameEngine {
       // Hitbox is ahead of player in facing direction, within Z depth and Y height
       // 对空规则：普通招式够不到高空（dy<45），「挑」可击落悬停的飞白鹤（dy<115）
       const dyLimit = opts.antiAir ? 115 : 45;
-      if (dx > -20 && dx < opts.rangeX && dz < opts.rangeZ && dy < dyLimit) {
+      if (dx > rear && dx < rangeX && dz < rangeZ && dy < dyLimit) {
         // 醉墨剑客：醉步侧闪——非前摇/硬直/出招中 28% 概率瞬间侧移避开挥击（冷却 2.5s）
         // 闪避限量原则：概率+双冷却门控，保证连段节奏与爽感不被频繁落空破坏
         if (
@@ -2358,14 +2467,17 @@ export class GameEngine {
         }
 
         hitCount++;
+        hitSet.add(enemy);
         enemy.vel.x = opts.knockbackX;
         enemy.vel.y = opts.knockbackY;
 
-        // Base damage formula（手势词条加成生效；鹤唳九天对浮空妖敌增伤）
+        // Base damage formula（手势词条加成生效；鹤唳九天对浮空妖敌增伤；
+        // 无双连招链：链层叠越高手势伤越重，变招连击滚雪球）
         const gestureMult = opts.isGesture ? this.getGestureDamageMultiplier() : 1.0;
+        const chainMult = opts.isGesture && inMusou ? this.chainDmgMult : 1;
         const skyBonus = enemy.pos.y > 30 ? this.sumStat('skySlayerPercent') : 0;
         const airMult = 1 + skyBonus / 100;
-        const baseDmg = 24 * opts.damageMultiplier * this.getAffixDamageMultiplier() * gestureMult * airMult;
+        const baseDmg = 24 * opts.damageMultiplier * this.getAffixDamageMultiplier() * gestureMult * airMult * chainMult;
 
         // Crit check
         let critChance = 0.15;
@@ -2380,19 +2492,41 @@ export class GameEngine {
         // Lifesteal affix
         this.applyLifesteal(finalDmg);
 
-        // 觉醒充能：命中积累（暴击额外加成）
-        this.gainAwakening(isCrit ? 4.5 : 2.5);
+        // 觉醒充能：命中积累（暴击额外加成；无双充能更快）
+        this.gainAwakening((isCrit ? 4.5 : 2.5) * (inMusou ? MUSOU_TUNING.awakeningPerHitMult : 1));
       }
     }
 
     if (hitCount > 0) {
-      // Hit-stop impact freeze
-      this.hitStopTimer = 0.055;
+      // Hit-stop impact freeze（无双短停帧：保打击感但不粘滞，连招更顺畅）
+      this.hitStopTimer = inMusou ? MUSOU_TUNING.hitStopSec : 0.055;
       sound.playHit(false);
+
+      // 斩罡余波（无双专属）：每一击都荡开墨浪，波及近旁未被直接命中的妖墨
+      // → 任意招式都是群体技，怪海中一招清一圈；余波伤害精简特效保帧率
+      const R = MUSOU_TUNING.wakeRadius;
+      const wakeBase = 24 * opts.damageMultiplier * this.getAffixDamageMultiplier()
+        * (opts.isGesture ? this.getGestureDamageMultiplier() : 1) * MUSOU_TUNING.wakeDmgMult;
+      let wakeHits = 0;
+      for (const enemy of this.enemies) {
+        if (enemy.hp <= 0 || hitSet.has(enemy)) continue;
+        const wd = Math.hypot(enemy.pos.x - player.pos.x, enemy.pos.z - player.pos.z);
+        if (wd < R) {
+          wakeHits++;
+          this.damageEnemy(enemy, Math.max(1, Math.round(wakeBase)), false, 0.25, opts.isGesture, false, 0);
+        }
+      }
+      if (wakeHits > 0) {
+        // 余波命中也入连击：连杀数字狂飙（割草爽感核心）
+        player.comboCount += wakeHits;
+        player.comboTimer = MUSOU_TUNING.comboWindowSec;
+        player.maxCombo = Math.max(player.maxCombo, player.comboCount);
+        this.spawnShockRing(player.pos.x, player.pos.z, 4, R * 0.9, 0.4, '#2a241c', 2);
+      }
 
       const prevCombo = player.comboCount;
       player.comboCount += hitCount;
-      player.comboTimer = this.gameMode === 'MUSOU' ? MUSOU_TUNING.comboWindowSec : 2.8;
+      player.comboTimer = inMusou ? MUSOU_TUNING.comboWindowSec : 2.8;
       player.maxCombo = Math.max(player.maxCombo, player.comboCount);
       this.callbacks.onComboChange(player.comboCount);
 
@@ -2414,7 +2548,7 @@ export class GameEngine {
     }
   }
 
-  private damageEnemy(enemy: EnemyEntity, damage: number, isCrit: boolean = false, stunOverride?: number, isGesture: boolean = false, bypassShield: boolean = false) {
+  private damageEnemy(enemy: EnemyEntity, damage: number, isCrit: boolean = false, stunOverride?: number, isGesture: boolean = false, bypassShield: boolean = false, fxLevel: 1 | 0 = 1) {
     if (enemy.hp <= 0) return;
     const player = this.player;
 
@@ -2480,8 +2614,12 @@ export class GameEngine {
     enemy.vel.x = recoilDir * recoilPower;
     enemy.vel.z = (Math.random() - 0.5) * 2;
 
-    // Ink splatter particles
-    this.spawnInkBurst(enemy.pos, 12, '#181412');
+    // Ink splatter particles（fxLevel 0：余波命中不刷墨花，怪海下保帧率；
+    // 拥挤降特效：同屏妖墨过半时粒子减量）
+    const fxScale = fxLevel * this.crowdFxScale();
+    if (fxScale > 0) {
+      this.spawnInkBurst(enemy.pos, Math.max(3, Math.round(12 * fxScale)), '#181412');
+    }
     if (isCrit) {
       this.spawnInkBurst(enemy.pos, 8, '#b91c1c'); // Cinnabar crit ink
       this.addFloatingText('『破势』', enemy.pos.x, enemy.pos.y + 60, '#ef4444', 1.35, true);
@@ -2510,13 +2648,15 @@ export class GameEngine {
         player.ink = Math.min(player.maxInk, player.ink + critInk);
         this.emitInk();
       }
-    } else if (enemy.hitStun > 0.5) {
+    } else if (fxLevel && enemy.hitStun > 0.5) {
       this.addFloatingText('『僵直』', enemy.pos.x, enemy.pos.y + 55, '#f59e0b', 1.15);
     }
 
-    // Floating damage numbers in classical Chinese style
-    const dmgText = isCrit ? `暴击 · ${damage}` : `${damage}`;
-    this.addFloatingText(dmgText, enemy.pos.x, enemy.pos.y + 40, isCrit ? '#dc2626' : '#3d3121', isCrit ? 1.4 : 1.0, isCrit);
+    // Floating damage numbers in classical Chinese style（余波命中不刷伤害数字：怪海下防浮字刷屏）
+    if (fxLevel) {
+      const dmgText = isCrit ? `暴击 · ${damage}` : `${damage}`;
+      this.addFloatingText(dmgText, enemy.pos.x, enemy.pos.y + 40, isCrit ? '#dc2626' : '#3d3121', isCrit ? 1.4 : 1.0, isCrit);
+    }
 
     // Frost slow visual
     if (enemy.frostSlowTimer && enemy.frostSlowTimer > 0) {
@@ -2603,7 +2743,8 @@ export class GameEngine {
     if (enemy.hp > 0) enemy.hp = 0;
     enemy.state = 'DEAD';
     enemy.stateTimer = 0;
-    enemy.deathTimer = 0.9; // 尸体 0.9s 后消散（修复永不消失的泄漏）
+    // 尸体 0.9s 后消散（修复永不消失的泄漏）；无双小怪 0.55s 快消散（怪海下减渲染负担，Boss 仍 0.9s）
+    enemy.deathTimer = this.gameMode === 'MUSOU' && !enemy.isBoss ? MUSOU_TUNING.corpseLife : 0.9;
     this.enemyWalkCycleCache.delete(enemy.id);
     this.gainAwakening(this.gameMode === 'MUSOU' ? MUSOU_TUNING.awakeningPerKill : 6); // 觉醒充能：击杀奖励（无双略快）
 
@@ -2924,6 +3065,8 @@ export class GameEngine {
   }
 
   private addFloatingText(text: string, x: number, y: number, color: string, scale: number = 1.0, isCrit: boolean = false, isGesture: boolean = false) {
+    // 浮字硬上限：无双怪海连杀时防数组无限膨胀（性能兑底，旧字优先淘汰）
+    if (this.floatingTexts.length > 48) this.floatingTexts.shift();
     this.floatingTexts.push({
       id: Math.random().toString(),
       text,
@@ -3006,11 +3149,13 @@ export class GameEngine {
     }
 
     // Passive Ink Energy Regen (节流回调)
+    // 无双：回墨速率 14→18/秒（MUSOU_TUNING.inkRegen），招式循环更爽快
     let regenMult = 1.0;
     for (const a of player.affixes) {
       if (a.stats.inkRegenBonus) regenMult += a.stats.inkRegenBonus / 100;
     }
-    player.ink = Math.min(player.maxInk, player.ink + dt * 14 * regenMult);
+    const baseRegen = this.gameMode === 'MUSOU' ? MUSOU_TUNING.inkRegen : 14;
+    player.ink = Math.min(player.maxInk, player.ink + dt * baseRegen * regenMult);
     const inkInt = Math.floor(player.ink);
     if (inkInt !== this.lastInkEmitted) {
       this.lastInkEmitted = inkInt;
@@ -3023,6 +3168,15 @@ export class GameEngine {
       if (player.comboTimer <= 0) {
         player.comboCount = 0;
         this.callbacks.onComboChange(0);
+      }
+    }
+
+    // 连招链窗口衰减：超时链层清零（无双连招节奏压力源）
+    if (this.gestureChainTimer > 0) {
+      this.gestureChainTimer -= dt;
+      if (this.gestureChainTimer <= 0) {
+        this.gestureChain = 0;
+        this.lastGestureType = null;
       }
     }
 
@@ -3186,12 +3340,19 @@ export class GameEngine {
     if (this.enemiesSpawnedInWave < this.totalEnemiesInWave) {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0) {
-        // 无双怪海：刷怪间隔大幅缩短，妖墨如潮水般涌来
+        // 无双怪海 v2：刷怪间隔再缩短（×0.26），妖墨如怒潮拍岸
         const musouSpawnMult = this.gameMode === 'MUSOU' ? MUSOU_TUNING.spawnIntervalMult : 1;
         this.spawnTimer = (1.8 + Math.random() * 1.5) * DIFFICULTY_TUNING[this.difficulty].spawnRate * musouSpawnMult;
         if (!this.spawnNextEnemy()) {
-          // 场面拥挤：短暂延迟后再试（波次配额未消耗）
-          this.spawnTimer = 0.75;
+          // 场面拥挤：短暂延迟后再试（波次配额未消耗）；无双重试更快（怪海不缺口）
+          this.spawnTimer = this.gameMode === 'MUSOU' ? MUSOU_TUNING.musouRetry : 0.75;
+        } else if (
+          this.gameMode === 'MUSOU' &&
+          this.wave >= MUSOU_TUNING.clusterFromWave &&
+          Math.random() < MUSOU_TUNING.clusterSpawnChance
+        ) {
+          // 无双簇刷：50% 概率同帧再补一只，妖墨成群结队压上（spawnNextEnemy 内部有拥挤保护）
+          this.spawnNextEnemy();
         }
       }
     } else if (this.enemies.every((e) => e.hp <= 0) && !this.isWaveClearing) {
@@ -3707,8 +3868,9 @@ export class GameEngine {
           enemy.stateDuration = windupTime;
           enemy.windupTimer = windupTime;
           enemy.windupMax = windupTime;
-          // 冷却在前摇开始时即重置
-          const baseCd = enemy.type === 'SHADOW_NINJA' ? 1.6 : 2.2;
+          // 冷却在前摇开始时即重置（无双：怪海围压下敌近战轮炊更慢，保割草节奏不被打断）
+          const baseCd = (enemy.type === 'SHADOW_NINJA' ? 1.6 : 2.2)
+            * (this.gameMode === 'MUSOU' ? MUSOU_TUNING.enemyAttackCdMult : 1);
           enemy.attackCooldown = enemy.elite?.modifier === 'FRENZIED' ? baseCd * 0.55 : baseCd;
           sound.playWindup();
         }
@@ -4571,9 +4733,11 @@ export class GameEngine {
             renderSx += tremor;
           }
 
-          // 尸体淡出
-          const deathFade = enemy.hp <= 0 ? Math.max(0, (enemy.deathTimer ?? 0) / 0.9) : 1;
-          const spawnFade = enemy.hp > 0 ? Math.min(1, 1 - (enemy.spawnGrace ?? 0) / 0.6) : 1;
+          // 尸体淡出（无双小怪 0.55s 快消散，与 killEnemy 的 deathTimer 设定同步）
+          const corpseLife = enemy.isBoss || this.gameMode !== 'MUSOU' ? 0.9 : MUSOU_TUNING.corpseLife;
+          const deathFade = enemy.hp <= 0 ? Math.max(0, (enemy.deathTimer ?? 0) / corpseLife) : 1;
+          const spawnGraceMax = this.gameMode === 'MUSOU' ? MUSOU_TUNING.spawnGraceSec : 0.6;
+          const spawnFade = enemy.hp > 0 ? Math.min(1, 1 - (enemy.spawnGrace ?? 0) / spawnGraceMax) : 1;
           const fade = deathFade * spawnFade;
 
           this.renderShadow(ctx, sx, groundY, finalScale, enemy.pos.y);

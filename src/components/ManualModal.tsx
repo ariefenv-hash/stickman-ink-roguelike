@@ -138,7 +138,7 @@ export const ManualModal: React.FC<ManualModalProps> = ({ onClose }) => {
         <div className="p-2.5 mb-4 bg-[#f6e2df] rounded-lg border border-[#b91c1c]/40 flex items-start gap-2">
           <Swords className="w-4 h-4 text-[#b91c1c] shrink-0 mt-0.5" />
           <div className="text-[10px] font-ink-serif text-[#85745a] leading-relaxed">
-            <span className="text-[#b91c1c] font-semibold">无双演武模式</span>：标题界面可选。妖墨如潮海般涌来，每三阵一尊墨煞拦路、九阵起双煞齐临，敌单体更脆、刷怪更快、连斩窗口更长——连击越高攻击越强（每连 +0.1%）！二十五连「杀」、五十连「破」、百连「灭」触发全屏杀阵演出。无通关概念，以杀止杀，功绩与最深阵数独立计入「无双血录」。
+            <span className="text-[#b91c1c] font-semibold">无双演武模式</span>：标题界面可选。妖墨如怒潮般成群涌来（刷怪极密且成群压上），每隔一阵一尊墨煞拦路、五阵起双煞同临、十三阵起三煞齐临；敌单体更脆、连斩窗口更长——连击越高攻击越强（每连 +0.2%，上限 +30%）！<span className="text-[#b45309] font-semibold">连招链</span>：1.8 秒内连续出招叠链，交替不同招式（刺→横→劈→圆→闪）涨层更快，链层提高伤害与攻击范围，超时清零；<span className="text-[#b45309] font-semibold">斩罡余波</span>：每一击都荡开墨浪波及周身妖墨，任意招式皆是群体技。杀敌回墨大增、招式墨耗减半，尽情倾泻！二十五连「杀」、五十连「破」、百连「灭」触发全屏杀阵演出。无通关概念，以杀止杀，功绩与最深阵数独立计入「无双血录」。
           </div>
         </div>
 
