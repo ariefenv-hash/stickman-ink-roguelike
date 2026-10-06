@@ -369,10 +369,14 @@ export interface RunStats {
   wave: number;
   affixes: Affix[];
   voluntaryEnd?: boolean; // 玩家主动收笔（暂停菜单「结束本局」）：结算展示收笔小结局
+  mode?: GameMode;        // 玩法模式（缺省视为 CLASSIC，兼容旧档）
 }
 
 // 难度等级（引擎与存档共用；engine.ts 保留 re-export）
 export type Difficulty = 'EASY' | 'NORMAL' | 'HARD';
+
+// 玩法模式：CLASSIC 经典征战（15折通关线）/ MUSOU 无双演武（怪海割草，无通关概念）
+export type GameMode = 'CLASSIC' | 'MUSOU';
 
 // localStorage 持久记录
 export interface PersistentRecords {
@@ -382,6 +386,8 @@ export interface PersistentRecords {
   totalRuns: number;
   victories: number;
   lastPlayedAt: number;
+  musouHighScore: number;  // 无双最高功绩
+  musouBestWave: number;   // 无双最远阵数
 }
 
 /** 单局进度快照：暂停/波次开始/切后台时自动落盘，杀后台后可恢复（波内敌人重刷） */
@@ -393,6 +399,7 @@ export interface RunSnapshot {
   score: number;
   difficulty: Difficulty;
   endlessMode: boolean;
+  mode?: GameMode;            // 玩法模式（缺省视为 CLASSIC，兼容旧快照）
   awakening: number;          // 觉醒槽进度（上限恒 100）
   stats: {                    // 结算累计（防恢复后击杀数归零）
     kills: number;

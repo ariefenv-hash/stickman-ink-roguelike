@@ -136,7 +136,7 @@ export const SaveManagerModal: React.FC<SaveManagerModalProps> = ({
             <div className="flex items-center justify-between gap-3">
               <div className="text-left">
                 <div className="text-sm font-calligraphy text-[#2b2118]">
-                  第{snapshot.wave}折 · {DIFFICULTY_LABEL[snapshot.difficulty] ?? '炉火纯青'}
+                  {snapshot.mode === 'MUSOU' ? `无双第${snapshot.wave}阵` : `第${snapshot.wave}折`} · {DIFFICULTY_LABEL[snapshot.difficulty] ?? '炉火纯青'}
                   {snapshot.endlessMode && <span className="ml-1 text-[#7c3aed] text-xs">无尽</span>}
                 </div>
                 <div className="text-[10px] font-ink-serif text-[#937f60] mt-0.5">
@@ -184,6 +184,14 @@ export const SaveManagerModal: React.FC<SaveManagerModalProps> = ({
             <div>
               <div className="text-sm font-calligraphy text-[#b91c1c] tabular-nums leading-none">{records.totalKills}</div>
               <div className="text-[9px] font-ink-serif text-[#937f60] mt-1">累计斩敌</div>
+            </div>
+            <div>
+              <div className="text-sm font-calligraphy text-[#dc2626] tabular-nums leading-none">{records.musouHighScore}</div>
+              <div className="text-[9px] font-ink-serif text-[#937f60] mt-1">无双最高功绩</div>
+            </div>
+            <div>
+              <div className="text-sm font-calligraphy text-[#dc2626] tabular-nums leading-none">第{records.musouBestWave}阵</div>
+              <div className="text-[9px] font-ink-serif text-[#937f60] mt-1">无双最深血战</div>
             </div>
             <div>
               <div className="text-sm font-calligraphy text-[#2b2118] tabular-nums leading-none">{records.totalRuns}</div>

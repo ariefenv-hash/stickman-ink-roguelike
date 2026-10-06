@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Volume2, VolumeX, BookOpen, Layers, Sparkles, Wand2, Split, Pause, Smartphone } from 'lucide-react';
-import { Affix, BossHudInfo, ControlMode, GestureResult } from '../types/game';
+import { Affix, BossHudInfo, ControlMode, GameMode, GestureResult } from '../types/game';
 
 interface HUDProps {
   hp: number;
@@ -19,6 +19,7 @@ interface HUDProps {
   enemiesLeft: number;
   combo: number;
   score: number;
+  gameMode?: GameMode;
   isMuted: boolean;
   volume: number;
   onVolumeChange: (v: number) => void;
@@ -51,6 +52,7 @@ export const HUD: React.FC<HUDProps> = ({
   enemiesLeft,
   combo,
   score,
+  gameMode = 'CLASSIC',
   isMuted,
   volume,
   onVolumeChange,
@@ -70,6 +72,7 @@ export const HUD: React.FC<HUDProps> = ({
   bossInfo,
 }) => {
   const [showVolume, setShowVolume] = useState(false);
+  const isMusou = gameMode === 'MUSOU';
 
   // 竖屏体验提示：仅触屏设备且竖屏时提示横屏更佳（用户点「知道了」后永久记住）
   const [showPortraitHint, setShowPortraitHint] = useState<boolean>(false);
@@ -123,9 +126,16 @@ export const HUD: React.FC<HUDProps> = ({
           <div className="flex flex-col min-w-0">
             <h1 className="text-base sm:text-lg font-calligraphy tracking-widest text-[#2b2118] flex items-center gap-1.5">
               <span>墨痕武道</span>
-              <span className="text-xs font-ink-serif text-[#b91c1c] border border-[#b91c1c]/50 px-1 py-0.2 rounded shrink-0">
-                无双
-              </span>
+              {/* 模式徽章：无双演武朱砂实底强高亮，经典征战淡雅描边 */}
+              {isMusou ? (
+                <span className="text-xs font-ink-serif text-[#f8f0dc] bg-[#b91c1c] px-1.5 py-0.5 rounded shrink-0 shadow-sm animate-pulse">
+                  无双演武
+                </span>
+              ) : (
+                <span className="text-xs font-ink-serif text-[#b45309] border border-[#b45309]/50 px-1 py-0.2 rounded shrink-0">
+                  经典征战
+                </span>
+              )}
             </h1>
             <div className="text-[11px] font-ink-serif text-[#85745a] flex items-center gap-2 min-w-0">
               <span className="truncate">{waveTitle}</span>
@@ -190,10 +200,14 @@ export const HUD: React.FC<HUDProps> = ({
 
         {/* Center: Score & Combo Notice */}
         <div className="flex items-center gap-3 shrink-0">
-          {combo > 1 && (
-            <div className="flex items-center gap-1 px-2.5 py-1 bg-[#b91c1c]/20 border border-[#b91c1c]/40 rounded-lg animate-pulse">
-              <span className="text-sm font-bold text-[#b91c1c] tabular-nums">{combo}</span>
-              <span className="text-xs font-calligraphy text-[#b91c1c]">连斩</span>
+          {combo > (isMusou ? 4 : 1) && (
+            <div className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
+              isMusou
+                ? 'bg-[#b91c1c]/30 border-[#b91c1c] shadow-[0_0_10px_rgba(185,28,28,0.4)]'
+                : 'bg-[#b91c1c]/20 border-[#b91c1c]/40 animate-pulse'
+            }`}>
+              <span className={`${isMusou ? 'text-base' : 'text-sm'} font-bold text-[#b91c1c] tabular-nums`}>{combo}</span>
+              <span className={`font-calligraphy text-[#b91c1c] ${isMusou ? 'text-sm' : 'text-xs'}`}>连斩</span>
             </div>
           )}
           <div className="text-right">

@@ -20,10 +20,22 @@ interface GameOverModalProps {
 /**
  * 收笔小结局：根据本局战况生成一段三段式水墨尾声，
  * 让主动结束的玩家「有始有终」——每一局的收笔都不同。
+ * v2: 无双模式尾声（阵次话术，血战氛围）。
  */
 const buildEpilogue = (s: RunStats): { middle: string; flourish: string | null } => {
+  const musou = s.mode === 'MUSOU';
   let middle: string;
-  if (s.wave <= 3) {
+  if (musou) {
+    if (s.wave <= 3) {
+      middle = '初入杀阵，血犹未冷。此番见好就收，不是怯战——妖墨杀不尽，留些给来日的自己练笔。';
+    } else if (s.wave <= 9) {
+      middle = `数阵血战，杀名渐起。${s.kills >= 100 ? '笔下散去的妖墨已逾百数，' : ''}妖墨闻你名号，竟开始绕道而行。`; 
+    } else if (s.wave <= 14) {
+      middle = '十阵之上，尸山墨海。此局不问生死——杀伐有度，收放自如，方是无双真意。';
+    } else {
+      middle = '十五阵开外，双煞大帝皆伏于笔锋之下。这一卷血录，妖墨要传抄百年。';
+    }
+  } else if (s.wave <= 3) {
     middle = '初执笔墨，锋芒未露。此番于从容处收笔，不是退场，而是给来日的自己留一分余地——江湖不急，来日方长。';
   } else if (s.wave <= 9) {
     middle = `数折鏖战，笔意渐成。${s.kills >= 40 ? '笔下散去的妖墨已逾四十之数，' : ''}妖墨退散处，茶楼话本里已开始流传你的名号。`;
@@ -35,11 +47,11 @@ const buildEpilogue = (s: RunStats): { middle: string; flourish: string | null }
 
   let flourish: string | null = null;
   if (s.maxCombo >= 30) {
-    flourish = '连招如笔走龙蛇，一气呵成，观者无不动容。';
+    flourish = musou ? '连斩如狂潮不歇，杀阵一开，万夫莫当。' : '连招如笔走龙蛇，一气呵成，观者无不动容。';
   } else if (s.affixes.length >= 6) {
     flourish = `一身词章满腹（参悟 ${s.affixes.length} 道），皆是此行注脚。`;
   } else if (s.bossKills >= 2) {
-    flourish = '宗师亦曾伏于你的笔下，纵是收笔，也收得掷地有声。';
+    flourish = musou ? '拦路的墨煞杀了一茬又一茬，纵是收兵，也收得腥风血雨。' : '宗师亦曾伏于你的笔下，纵是收笔，也收得掷地有声。';
   }
 
   return { middle, flourish };
@@ -54,6 +66,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 }) => {
   const voluntary = !isVictory && stats.voluntaryEnd === true;
   const epilogue = voluntary ? buildEpilogue(stats) : null;
+  const musou = stats.mode === 'MUSOU';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
@@ -82,26 +95,32 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
         {/* Heading */}
         <div className="text-xs font-ink-serif text-[#85745a] tracking-widest mb-1">
-          {voluntary ? '砚中墨尽 · 此卷终章' : '江湖路远 · 胜败无常'}
+          {voluntary ? (musou ? '血录合卷 · 杀阵暂歇' : '砚中墨尽 · 此卷终章') : musou ? '血战到底 · 妖墨狂欢' : '江湖路远 · 胜败无常'}
         </div>
         <h2 className="text-3xl font-calligraphy text-[#2b2118] mb-2">
-          {isVictory ? '笑傲江湖 · 墨武大成' : voluntary ? '收笔封卷 · 江湖有终' : '身陨道消 · 墨染残躯'}
+          {isVictory
+            ? '笑傲江湖 · 墨武大成'
+            : voluntary
+            ? musou ? '收兵回营 · 血录留名' : '收笔封卷 · 江湖有终'
+            : musou ? '无双演武 · 力战而竭' : '身陨道消 · 墨染残躯'}
         </h2>
         {voluntary ? (
           /* 收笔小结局：三段式水墨尾声，让这局故事有始有终 */
           <div className="w-full mb-4 px-4 py-3 bg-[#ece3cd] rounded-xl border border-[#c4b494] relative">
             <div className="absolute top-2 right-3 text-[9px] font-ink-serif text-[#937f60] tracking-[0.4em]">卷尾</div>
             <div className="text-[13px] font-ink-serif text-[#4a3c2a] leading-relaxed text-left">
-              <p className="mb-1.5">砚中墨尽，笔锋归鞘。</p>
+              <p className="mb-1.5">{musou ? '血录合卷，杀气归匣。' : '砚中墨尽，笔锋归鞘。'}</p>
               <p className="mb-1.5">{epilogue?.middle}</p>
               {epilogue?.flourish && <p className="mb-1.5">{epilogue.flourish}</p>}
-              <p className="text-[#85745a]">封卷之际，墨香犹在。江湖路远，笔落之处，后会有期。</p>
+              <p className="text-[#85745a]">{musou ? '封录之际，杀气犹在。妖墨潮起潮落，下一阵，再战。' : '封卷之际，墨香犹在。江湖路远，笔落之处，后会有期。'}</p>
             </div>
           </div>
         ) : (
           <p className="text-xs text-[#85745a] font-ink-serif mb-4 leading-relaxed">
             {isVictory
               ? '十五折尽破，墨煞大帝亦伏于笔下！一手神妙水墨书法冠绝天下，留得赫赫威名。'
+              : musou
+              ? '怪海无情，双拳难敌四手——但这一局斩落的妖墨，足以堆成一座墨山。重整旗鼓，再入阵中！'
               : '气血耗尽，虽败犹荣。武道一途重在磨砺心性，重整旗鼓再战江湖！'}
           </p>
         )}
@@ -117,9 +136,9 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         {/* Core stats: wave + score */}
         <div className="grid grid-cols-2 gap-3 w-full mb-3 p-4 bg-[#ece3cd] rounded-xl border border-[#c4b494]">
           <div className="text-center">
-            <div className="text-[11px] font-ink-serif text-[#85745a]">{isVictory ? '问鼎关卡' : voluntary ? '行至关卡' : '止步关卡'}</div>
+            <div className="text-[11px] font-ink-serif text-[#85745a]">{isVictory ? '问鼎关卡' : voluntary ? (musou ? '战至阵次' : '行至关卡') : musou ? '血战阵次' : '止步关卡'}</div>
             <div className="text-xl font-calligraphy text-[#2b2118] mt-0.5">
-              第{stats.wave}折
+              {musou ? `第${stats.wave}阵` : `第${stats.wave}折`}
             </div>
           </div>
           <div className="text-center border-l border-[#c4b494]">
@@ -134,8 +153,8 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         <div className="grid grid-cols-4 gap-2 w-full mb-3">
           <div className="p-2 bg-[#ece4d0] rounded-lg border border-[#c4b494] flex flex-col items-center">
             <Swords className="w-3.5 h-3.5 text-[#dc2626] mb-1" />
-            <div className="text-sm font-calligraphy text-[#2b2118] tabular-nums leading-none">{stats.kills}</div>
-            <div className="text-[9px] font-ink-serif text-[#937f60] mt-1">斩敌</div>
+            <div className={`font-calligraphy text-[#2b2118] tabular-nums leading-none ${musou ? 'text-base text-[#b91c1c]' : 'text-sm'}`}>{stats.kills}</div>
+            <div className="text-[9px] font-ink-serif text-[#937f60] mt-1">{musou ? '斩敌（主角）' : '斩敌'}</div>
           </div>
           <div className="p-2 bg-[#ece4d0] rounded-lg border border-[#c4b494] flex flex-col items-center">
             <Zap className="w-3.5 h-3.5 text-[#b45309] mb-1" />

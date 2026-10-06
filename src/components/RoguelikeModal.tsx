@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { Affix } from '../types/game';
+import { Affix, GameMode } from '../types/game';
 import { Sparkles, RefreshCw, Check } from 'lucide-react';
 
 interface RoguelikeModalProps {
@@ -12,9 +12,10 @@ interface RoguelikeModalProps {
   onReroll: () => void;
   rerollsLeft?: number;
   wave?: number;
+  gameMode?: GameMode;
 }
 
-export const RoguelikeModal: React.FC<RoguelikeModalProps> = ({ affixes, onSelect, onReroll, rerollsLeft = 1, wave = 1 }) => {
+export const RoguelikeModal: React.FC<RoguelikeModalProps> = ({ affixes, onSelect, onReroll, rerollsLeft = 1, wave = 1, gameMode = 'CLASSIC' }) => {
   const getRarityBadge = (rarity: Affix['rarity']) => {
     switch (rarity) {
       case 'LEGENDARY':
@@ -41,7 +42,9 @@ export const RoguelikeModal: React.FC<RoguelikeModalProps> = ({ affixes, onSelec
             参悟武学真意
           </h2>
           <p className="text-xs text-[#85745a] mt-1 font-ink-serif">
-            历经第{wave}折洗礼 · 从天地墨韵中择取一道心法词条，强化招式威能
+            {gameMode === 'MUSOU'
+              ? `无双第${wave}阵血战功成 · 从天地墨韵中择取一道心法词条，杀阵再启`
+              : `历经第${wave}折洗礼 · 从天地墨韵中择取一道心法词条，强化招式威能`}
           </p>
         </div>
 

@@ -24,6 +24,7 @@ import {
   EnemyEntity,
   EnemyType,
   FloatingText,
+  GameMode,
   GestureResult,
   GroundDecal,
   InkParticle,
@@ -41,13 +42,49 @@ import {
 /** 通关折数（击败该折 Boss 后达成「墨武大成」） */
 export const VICTORY_WAVE = 15;
 
-export type { Difficulty };
+export type { Difficulty, GameMode };
 
 const DIFFICULTY_TUNING: Record<Difficulty, { enemyHp: number; enemyDmg: number; spawnRate: number }> = {
   EASY: { enemyHp: 0.85, enemyDmg: 0.75, spawnRate: 1.25 },
   NORMAL: { enemyHp: 1.0, enemyDmg: 1.0, spawnRate: 1.0 },
   HARD: { enemyHp: 1.2, enemyDmg: 1.3, spawnRate: 0.82 },
 };
+
+/**
+ * 无双演武特化调参：怪海量翻倍、单体敌脆化（一刀一片的割草爽感）、
+ * Boss 高频低血（每 3 阵拦路，双 Boss 同屏）、连击窗口拉长、刷怪如潮。
+ */
+const MUSOU_TUNING = {
+  enemyHpMult: 0.72,       // 敌单体 HP 乘数（割草不卡壳）
+  bossHpMult: 0.65,        // Boss HP 额外乘数（高频 Boss 不能成为磨血拖累）
+  enemyDmgMult: 0.8,       // 敌伤乘数（被围殴时不至于秒死）
+  spawnIntervalMult: 0.42, // 刷怪间隔乘数（怪海如潮涌）
+  maxAlive: 28,            // 同屏存活上限（经典 22；怪海量需更高，仍受自适应画质保护）
+  waveCountBase: 8,        // 每阵怪海基数（经典 5）
+  waveCountPerWave: 4,     // 每阵递增（经典 3）
+  waveCountCap: 48,        // 阵怪数上限（经典 42）
+  bossEveryWaves: 3,       // Boss 间隔（经典每 5 折，无双每 3 阵）
+  dualBossFromWave: 9,     // 该阵起 Boss 波双 Boss 同屏
+  comboWindowSec: 5.0,     // 连击窗口（经典 3s）：怪海量下连招不断
+  gestureDmgBonus: 1.1,    // 手势伤害乘数（怪海清场效率）
+  comboDmgPerStack: 0.001, // 连击气魄：每连击 +0.1% 手势伤害（上限 100 连 +10%）
+  comboDmgCap: 100,        // 连击气魄上限连击数
+  killInk: 22,             // 击杀回墨（经典 15）：杀得多回得快，招式循环爽快
+  killInkElite: 32,        // 精英击杀回墨（经典 25）
+  awakeningPerKill: 7,     // 觉醒充能/杀（经典 6）：怪海量下大招更频繁
+};
+
+/** 无双普通阵名池：随阵号轮换，营造「杀不完的妖墨浪潮」氛围 */
+const MUSOU_WAVE_TITLES = ['妖墨狂潮', '群魔夜袭', '血战到底', '万军丛中', '墨海翻涌', '十面埋伏', '风声鹤唳', '杀阵突开'];
+
+/** 无双连杀里程碑：连击达到节点触发全屏演出（字→激波→锣声） */
+const MUSOU_KILL_MILESTONES: { at: number; hanzi: string }[] = [
+  { at: 25, hanzi: '杀！' },
+  { at: 50, hanzi: '破！' },
+  { at: 100, hanzi: '灭！' },
+  { at: 200, hanzi: '无双！' },
+  { at: 400, hanzi: '天人不败！' },
+];
 
 export interface GameEngineCallbacks {
   onHpChange: (hp: number, maxHp: number) => void;
@@ -183,6 +220,8 @@ export class GameEngine {
   public runEnded: boolean = false;
   public endlessMode: boolean = false;
   public difficulty: Difficulty = 'NORMAL';
+  /** 玩法模式：经典征战 / 无双演武（无双无通关概念，怪海量翻倍、Boss 高频、双 Boss 同屏） */
+  public gameMode: GameMode = 'CLASSIC';
   // 词条三选一弹窗挂起中：封ESC暂停/恢复，防弹窗底下游戏照跑、玩家被看不见的敌人打死
   private affixPickPending: boolean = false;
   // 玩家主动收笔（暂停菜单「结束本局」）：结算时给出收笔小结局
@@ -190,8 +229,10 @@ export class GameEngine {
   // resetGame 内抑制波次自动存：回标题/重开时不能把玩家「续战第N折」的存档点覆盖成重置后的第1折
   private suppressAutoSave: boolean = false;
 
-  // 同屏存活妖墨上限：无尽模式后期防生成堆积压垮帧率（Boss 本体不受限）
-  private readonly maxAliveEnemies = 22;
+  // 同屏存活妖墨上限：无尽模式后期防生成堆积压垮帧率（Boss 本体不受限）；无双模式怪海量放宽
+  private get maxAliveEnemies() {
+    return this.gameMode === 'MUSOU' ? MUSOU_TUNING.maxAlive : 22;
+  }
   // 暂停/结算时画面静止，仅在标记脏时重绘一帧（防移动端持续满帧渲染发热降频→卡顿）
   private renderDirty: boolean = true;
 
@@ -483,6 +524,11 @@ export class GameEngine {
     this.difficulty = d;
   }
 
+  /** 设置玩法模式（开局前调用；resetGame 不清除，由 App 在每次开新局时重设） */
+  public setGameMode(mode: GameMode) {
+    this.gameMode = mode;
+  }
+
   /** 词条选定，恢复战斗（清弹窗挂起锁，与 onWaveCleared 成对） */
   public confirmAffixPick() {
     this.affixPickPending = false;
@@ -615,6 +661,7 @@ export class GameEngine {
       score: this.score,
       difficulty: this.difficulty,
       endlessMode: this.endlessMode,
+      mode: this.gameMode,
       awakening: this.awakening,
       stats: {
         kills: this.runStats.kills,
@@ -680,6 +727,7 @@ export class GameEngine {
     this.score = snap.score;
     this.difficulty = snap.difficulty;
     this.endlessMode = !!snap.endlessMode;
+    this.gameMode = snap.mode ?? 'CLASSIC'; // 旧快照无 mode 字段，视为经典（向后兼容）
     this.awakening = Math.min(this.awakeningMax, Math.max(0, snap.awakening || 0));
     this.runStats = {
       kills: snap.stats?.kills || 0,
@@ -776,6 +824,7 @@ export class GameEngine {
       wave: this.wave,
       affixes: [...this.player.affixes],
       voluntaryEnd: this.voluntaryEnd,
+      mode: this.gameMode,
     };
   }
 
@@ -881,7 +930,24 @@ export class GameEngine {
     let count = 5 + waveNum * 3;
     let isBossWave = false;
 
-    if (waveNum === 1) {
+    // --- 无双演武：怪海阵次生成（无通关概念，Boss 每 3 阵拦路，双 Boss 同屏） ---
+    if (this.gameMode === 'MUSOU') {
+      const isMusouBoss = waveNum % MUSOU_TUNING.bossEveryWaves === 0;
+      const dualBoss = isMusouBoss && waveNum >= MUSOU_TUNING.dualBossFromWave;
+      const isEmperor = isMusouBoss && waveNum % (MUSOU_TUNING.bossEveryWaves * 5) === 0; // 每 15 阵大帝亲临
+      title = `无双·第${this.getChineseNumeral(waveNum)}阵 · `;
+      if (isEmperor) {
+        title += '墨煞大帝 · 亲临';
+      } else if (dualBoss) {
+        title += '双煞同临';
+      } else if (isMusouBoss) {
+        title += '墨煞拦路';
+      } else {
+        title += MUSOU_WAVE_TITLES[(waveNum - 1) % MUSOU_WAVE_TITLES.length];
+      }
+      count = MUSOU_TUNING.waveCountBase + waveNum * MUSOU_TUNING.waveCountPerWave;
+      isBossWave = isMusouBoss;
+    } else if (waveNum === 1) {
       title += '墨卒突袭';
       count = 5;
     } else if (waveNum === 2) {
@@ -931,13 +997,17 @@ export class GameEngine {
     }
 
     this.waveTitle = title;
+    // 无尽模式后期波次数量软上限：压力靠敌种构成而非无界数量（防生成/清理失衡堆场）；无双阵次上限另调
+    this.totalEnemiesInWave = Math.min(
+      count,
+      this.gameMode === 'MUSOU' ? MUSOU_TUNING.waveCountCap : 42,
+    );
+
     // 玄武镇岳：每波开战直接获得觉醒充能
     const waveStartAwakening = this.sumStat('awakeningOnWaveStart');
     if (waveStartAwakening > 0 && waveNum > 1) {
       this.gainAwakening(waveStartAwakening);
     }
-    // 无尽模式后期波次数量软上限：压力靠敌种构成而非无界数量（防生成/清理失衡堆场）
-    this.totalEnemiesInWave = Math.min(count, 42);
 
     // 凝墨为甲：波次开始时获得墨盾
     const shieldGain = this.player.affixes.reduce((s, a) => s + (a.stats.shieldOnWaveStart ?? 0), 0);
@@ -985,9 +1055,16 @@ export class GameEngine {
   private spawnNextEnemy(): boolean {
     if (this.enemiesSpawnedInWave >= this.totalEnemiesInWave) return true;
 
-    const isBossWave = this.wave % 5 === 0 || this.wave === VICTORY_WAVE;
+    // Boss 波判定：经典每 5 折（含终折 15）；无双每 3 阵
+    const isBossWave = this.gameMode === 'MUSOU'
+      ? this.wave % MUSOU_TUNING.bossEveryWaves === 0
+      : this.wave % 5 === 0 || this.wave === VICTORY_WAVE;
+    // 无双双 Boss：第 9 阵起 Boss 波连出两只（血量各自独享 tier 乘减）
+    const musouBossQuota = this.gameMode === 'MUSOU' && this.wave >= MUSOU_TUNING.dualBossFromWave ? 2 : 1;
     // Boss 本体豁免同屏上限（否则 Boss 波开场即被拥挤保护卡住）
-    const willBeBoss = isBossWave && this.enemiesSpawnedInWave === 0;
+    const willBeBoss = isBossWave && (this.gameMode === 'MUSOU'
+      ? this.enemiesSpawnedInWave < musouBossQuota
+      : this.enemiesSpawnedInWave === 0);
 
     // 同屏拥挤保护：存活妖墨达上限时推迟生成（不消耗波次配额，防无尽后期堆积压垮帧率→卡死）
     if (!willBeBoss) {
@@ -999,11 +1076,45 @@ export class GameEngine {
     }
 
     this.enemiesSpawnedInWave++;
-    const isBoss = isBossWave && this.enemiesSpawnedInWave === 1;
+    const isBoss = isBossWave && (this.gameMode === 'MUSOU'
+      ? this.enemiesSpawnedInWave <= musouBossQuota
+      : this.enemiesSpawnedInWave === 1);
 
     let type: EnemyType = 'INK_MINION';
     if (isBoss) {
       type = 'INK_BOSS';
+    } else if (this.gameMode === 'MUSOU') {
+      // 无双怪海池：炮灰权重放大（MINION 主导），机制敌点缀且全解锁提前——
+      // 割草节奏里机制敌是「调料」而非「主菜」，重度坦克/召唤克制堆场
+      const pool: { type: EnemyType; w: number }[] = [{ type: 'INK_MINION', w: 20 }];
+      if (this.wave >= 2) pool.push({ type: 'INK_ARCHER', w: 5 });
+      if (this.wave >= 3) pool.push({ type: 'INK_BRUTE', w: 3.5 });
+      if (this.wave >= 4) pool.push({ type: 'SHADOW_NINJA', w: 4 });
+      if (this.wave >= 5) pool.push({ type: 'INK_BOMBER', w: 4 });
+      if (this.wave >= 6) pool.push({ type: 'INK_SHIELD_GUARD', w: 3 });
+      if (this.wave >= 7) pool.push({ type: 'INK_SUMMONER', w: 1.5 });
+      if (this.wave >= 8) pool.push({ type: 'INK_CRANE', w: 2.5 });
+      if (this.wave >= 9) pool.push({ type: 'INK_TURTLE', w: 1.5 });
+      if (this.wave >= 10) pool.push({ type: 'INK_DRUNKARD', w: 3 });
+      let filtered = pool;
+      if (this.enemies.some((e) => e.type === 'INK_SUMMONER' && e.hp > 0)) {
+        filtered = filtered.filter((p) => p.type !== 'INK_SUMMONER');
+      }
+      if (this.enemies.some((e) => e.type === 'INK_TURTLE' && e.hp > 0)) {
+        filtered = filtered.filter((p) => p.type !== 'INK_TURTLE');
+      }
+      if (this.enemies.filter((e) => e.type === 'INK_CRANE' && e.hp > 0).length >= 2) {
+        filtered = filtered.filter((p) => p.type !== 'INK_CRANE');
+      }
+      const totalW = filtered.reduce((s, p) => s + p.w, 0);
+      let roll = Math.random() * totalW;
+      for (const p of filtered) {
+        roll -= p.w;
+        if (roll <= 0) {
+          type = p.type;
+          break;
+        }
+      }
     } else {
       // 加权生成池：随折数逐步解锁新妖墨（机制互补：近战/远程/重击/背刺/自爆/格挡/召唤）
       const pool: { type: EnemyType; w: number }[] = [{ type: 'INK_MINION', w: 10 }];
@@ -1046,9 +1157,9 @@ export class GameEngine {
     const spawnX = this.player.pos.x + spawnSide * (this.screenWidth * 0.55 + Math.random() * 80);
     const spawnZ = (Math.random() - 0.5) * 220;
 
-    // 精英词缀掷骰（第3折起，Boss波不出）
+    // 精英词缀掷骰（第3折起，Boss波不出；无双节奏快上限放宽到 3）
     let elite: EliteInfo | null = null;
-    if (!isBoss && this.wave >= 3 && this.eliteCountThisWave < 2) {
+    if (!isBoss && this.wave >= 3 && this.eliteCountThisWave < (this.gameMode === 'MUSOU' ? 3 : 2)) {
       const eliteChance = Math.min(0.25, 0.1 + this.wave * 0.012);
       if (Math.random() < eliteChance) {
         elite = this.makeElite(type);
@@ -1063,7 +1174,12 @@ export class GameEngine {
   /** 敌人显示名 */
   private enemyDisplayName(type: EnemyType, isBoss: boolean): string {
     if (isBoss) {
-      // Boss 三强线：按折数分级（5折先锋/10折宗师/15折+大帝）
+      // Boss 三强线：按折数分级（无双节奏提前：≥12 阵即大帝）
+      if (this.gameMode === 'MUSOU') {
+        if (this.wave >= 12) return '墨煞大帝';
+        if (this.wave >= 6) return '墨煞宗师';
+        return '墨煞先锋';
+      }
       if (this.wave < 10) return '墨煞先锋';
       if (this.wave < 15) return '墨煞宗师';
       return '墨煞大帝';
@@ -1084,6 +1200,10 @@ export class GameEngine {
 
   private spawnEnemyAt(type: EnemyType, spawnX: number, spawnZ: number, isBoss: boolean = false, elite: EliteInfo | null = null) {
     const tune = DIFFICULTY_TUNING[this.difficulty];
+    const isMusou = this.gameMode === 'MUSOU';
+    // 无双怪海：敌方数值全局乘减（割草爽感 + 高频围攻的生存空间）
+    const musouHpMult = isMusou ? MUSOU_TUNING.enemyHpMult : 1;
+    const musouDmgMult = isMusou ? MUSOU_TUNING.enemyDmgMult : 1;
     let hp = 45 + this.wave * 12;
     let damage = 12 + this.wave * 2;
     let scale = 1.0;
@@ -1127,7 +1247,10 @@ export class GameEngine {
       scale = 1.0;
     } else if (type === 'INK_BOSS') {
       // Boss 三强线数值分层：先锋（快攻型）＜ 宗师（标准）＜ 大帝（终折三阶段）
-      const bossTier: BossTier = this.wave >= 15 ? 3 : this.wave >= 10 ? 2 : 1;
+      // 无双节奏加速：tier 抬升提前（≥12 阵即大帝），双 Boss 血量另乘 0.65 防磨血拖节奏
+      const bossTier: BossTier = isMusou
+        ? (this.wave >= 12 ? 3 : this.wave >= 6 ? 2 : 1)
+        : (this.wave >= 15 ? 3 : this.wave >= 10 ? 2 : 1);
       if (bossTier === 1) {
         hp = 280 + this.wave * 50;
         damage = 26 + this.wave * 4;
@@ -1141,11 +1264,15 @@ export class GameEngine {
         damage = 40 + this.wave * 6;
         scale = 1.75;
       }
+      if (isMusou) {
+        hp *= MUSOU_TUNING.bossHpMult;
+        damage *= MUSOU_TUNING.enemyDmgMult;
+      }
       bossTierOf = bossTier;
     }
 
-    hp *= tune.enemyHp;
-    damage *= tune.enemyDmg;
+    hp *= tune.enemyHp * musouHpMult;
+    damage *= tune.enemyDmg * musouDmgMult;
 
     // 精英属性加成
     if (elite) {
@@ -1224,6 +1351,14 @@ export class GameEngine {
       this.activeBoss = enemy;
       this.callbacks.onBossUpdate({ name: enemy.name, hp: enemy.hp, maxHp: enemy.maxHp, phase: 1 });
       this.lastBossEmitted = enemy.id;
+      // 无双双 Boss：第二只入场播报名演出（HUD 血条切至新 Boss，先前的击杀后自动接力）
+      if (this.gameMode === 'MUSOU') {
+        const dualBossAlive = this.enemies.filter((e) => e.isBoss && e.hp > 0).length + 1;
+        if (dualBossAlive >= 2) {
+          this.addFloatingText('双煞齐至！', enemy.pos.x, enemy.pos.y + 100, '#dc2626', 1.8, true, true);
+          sound.playBossWarn();
+        }
+      }
     }
 
     this.enemies.push(enemy);
@@ -1683,7 +1818,7 @@ export class GameEngine {
         sound.playSlash('heavy');
 
         player.comboCount += 1;
-        player.comboTimer = 3.0;
+        player.comboTimer = this.gameMode === 'MUSOU' ? MUSOU_TUNING.comboWindowSec : 3.0;
         player.maxCombo = Math.max(player.maxCombo, player.comboCount);
         this.callbacks.onComboChange(player.comboCount);
 
@@ -2122,6 +2257,11 @@ export class GameEngine {
         mult += affix.stats.gestureBonus / 100;
       }
     }
+    // 无双气魄：连击即攻势，每连击 +0.1% 手势伤害（上限 100 连 +10%），怪海中连招永不断
+    if (this.gameMode === 'MUSOU') {
+      mult *= MUSOU_TUNING.gestureDmgBonus;
+      mult += Math.min(this.player.comboCount, MUSOU_TUNING.comboDmgCap) * MUSOU_TUNING.comboDmgPerStack;
+    }
     return mult;
   }
 
@@ -2252,7 +2392,7 @@ export class GameEngine {
 
       const prevCombo = player.comboCount;
       player.comboCount += hitCount;
-      player.comboTimer = 2.8;
+      player.comboTimer = this.gameMode === 'MUSOU' ? MUSOU_TUNING.comboWindowSec : 2.8;
       player.maxCombo = Math.max(player.maxCombo, player.comboCount);
       this.callbacks.onComboChange(player.comboCount);
 
@@ -2465,19 +2605,39 @@ export class GameEngine {
     enemy.stateTimer = 0;
     enemy.deathTimer = 0.9; // 尸体 0.9s 后消散（修复永不消失的泄漏）
     this.enemyWalkCycleCache.delete(enemy.id);
-    this.gainAwakening(6); // 觉醒充能：击杀奖励
+    this.gainAwakening(this.gameMode === 'MUSOU' ? MUSOU_TUNING.awakeningPerKill : 6); // 觉醒充能：击杀奖励（无双略快）
 
     this.enemiesKilledInWave++;
     this.runStats.kills++;
     if (enemy.elite) this.runStats.eliteKills++;
     if (enemy.isBoss) {
       this.runStats.bossKills++;
-      this.activeBoss = null;
       this.addScore(500 + 150 * this.wave);
       this.addFloatingText('宗师陨落！', enemy.pos.x, enemy.pos.y + 90, '#fbbf24', 1.8, true, true);
-      this.callbacks.onBossUpdate(null);
+      // 双 Boss 血条接力：无双模式下若场内还有存活 Boss，血条切至后者而非清空
+      const remainingBoss = this.enemies.find((e) => e !== enemy && e.isBoss && e.hp > 0);
+      this.activeBoss = remainingBoss ?? null;
+      if (remainingBoss) {
+        this.lastBossEmitted = remainingBoss.id;
+        this.callbacks.onBossUpdate({ name: remainingBoss.name, hp: remainingBoss.hp, maxHp: remainingBoss.maxHp, phase: remainingBoss.bossPhase ?? 1 });
+      } else {
+        this.callbacks.onBossUpdate(null);
+      }
     } else {
       this.addScore(100 + (enemy.elite ? 150 : 0));
+    }
+
+    // --- 无双连杀里程碑：全屏大字 + 激波 + 锣声（25杀/50杀/100杀/200杀/400杀） ---
+    if (this.gameMode === 'MUSOU') {
+      const milestone = MUSOU_KILL_MILESTONES.find((m) => m.at === this.player.comboCount);
+      if (milestone) {
+        this.addFloatingText(milestone.hanzi, this.player.pos.x, this.player.pos.y + 110, '#dc2626', 2.4, true, true);
+        this.spawnShockRing(this.player.pos.x, this.player.pos.z, 10, 170, 0.6, '#b91c1c', 4);
+        this.spawnShockRing(this.player.pos.x, this.player.pos.z, 6, 100, 0.45, '#1a1611', 3);
+        this.triggerZoomPunch(0.04);
+        this.triggerInkEdge(0.45);
+        sound.playCalligraphyGong(milestone.hanzi);
+      }
     }
 
     this.spawnInkBurst(enemy.pos, 25, '#0a0a0a');
@@ -2506,8 +2666,11 @@ export class GameEngine {
 
     this.callbacks.onWaveChange(this.wave, this.waveTitle, Math.max(0, this.totalEnemiesInWave - this.enemiesKilledInWave));
 
-    // Ink recover on kill (精英额外回复)
-    this.player.ink = Math.min(this.player.maxInk, this.player.ink + (enemy.elite ? 25 : 15));
+    // Ink recover on kill (精英额外回复；无双杀得多回得快，招式循环爽快)
+    const inkGain = enemy.elite
+      ? (this.gameMode === 'MUSOU' ? MUSOU_TUNING.killInkElite : 25)
+      : (this.gameMode === 'MUSOU' ? MUSOU_TUNING.killInk : 15);
+    this.player.ink = Math.min(this.player.maxInk, this.player.ink + inkGain);
     this.emitInk();
 
     // 雷引连枝：击杀释放连锁闪电
@@ -3023,7 +3186,9 @@ export class GameEngine {
     if (this.enemiesSpawnedInWave < this.totalEnemiesInWave) {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0) {
-        this.spawnTimer = (1.8 + Math.random() * 1.5) * DIFFICULTY_TUNING[this.difficulty].spawnRate;
+        // 无双怪海：刷怪间隔大幅缩短，妖墨如潮水般涌来
+        const musouSpawnMult = this.gameMode === 'MUSOU' ? MUSOU_TUNING.spawnIntervalMult : 1;
+        this.spawnTimer = (1.8 + Math.random() * 1.5) * DIFFICULTY_TUNING[this.difficulty].spawnRate * musouSpawnMult;
         if (!this.spawnNextEnemy()) {
           // 场面拥挤：短暂延迟后再试（波次配额未消耗）
           this.spawnTimer = 0.75;
@@ -3048,8 +3213,8 @@ export class GameEngine {
         this.addFloatingText(`调息回气 +${heal}`, player.pos.x, player.pos.y + 60, '#4ade80', 1.2);
       }
 
-      // 通关胜利判定：击败终折 Boss（非无尽模式）
-      if (this.wave >= VICTORY_WAVE && !this.endlessMode) {
+      // 通关胜利判定：击败终折 Boss（非无尽模式；无双无通关概念，永续征战）
+      if (this.wave >= VICTORY_WAVE && !this.endlessMode && this.gameMode === 'CLASSIC') {
         this.runEnded = true;
         sound.stopHeartbeat();
         // [修复·无尽入口死机] 不可先 isPaused=true 再 schedule——暂停会冻结

@@ -12,7 +12,7 @@ import { GameOverModal } from './components/GameOverModal';
 import { PauseOverlay } from './components/PauseOverlay';
 import { TitleMenu } from './components/TitleMenu';
 import { SaveManagerModal } from './components/SaveManagerModal';
-import { Affix, BossHudInfo, ControlMode, GestureResult, RunSnapshot, RunStats } from './types/game';
+import { Affix, BossHudInfo, ControlMode, GameMode, GestureResult, RunSnapshot, RunStats } from './types/game';
 import { drawRandomAffixes } from './game/affixes';
 import { sound } from './utils/audio';
 import {
@@ -66,6 +66,8 @@ export default function App() {
   const [newRecord, setNewRecord] = useState<boolean>(false);
   // 本局难度：重开一局时按同难度重置初始血量（此前重开丢失难度加成，EASY/HARD 回退 120）
   const [difficulty, setDifficulty] = useState<'EASY' | 'NORMAL' | 'HARD'>('NORMAL');
+  // 本局玩法模式：经典征战 / 无双演武（决定引擎刷怪/BOSS 节奏与结算记录分流）
+  const [gameMode, setGameMode] = useState<GameMode>('CLASSIC');
   // 未完成征战认领（单局进度快照）：标题界面显示「续战」入口
   const [resumeSnapshot, setResumeSnapshot] = useState<RunSnapshot | null>(() => loadRunSnapshot());
   const [showSaveManager, setShowSaveManager] = useState<boolean>(false);
@@ -218,7 +220,7 @@ export default function App() {
     }
   };
 
-  const handleStartGame = (d: 'EASY' | 'NORMAL' | 'HARD') => {
+  const handleStartGame = (d: 'EASY' | 'NORMAL' | 'HARD', mode: GameMode = 'CLASSIC') => {
     if (!engineRef.current) return;
     const engine = engineRef.current;
     sound.unlock();
@@ -226,10 +228,12 @@ export default function App() {
     // 防止旧档被新局首个存档点静默顶掉）
     clearRunSnapshot();
     setResumeSnapshot(null);
+    engine.setGameMode(mode); // 先设模式再 resetGame：resetGame 内 startWave(1) 依赖 gameMode 生成阵次
     engine.resetGame();
     engine.setDifficulty(d);
     engine.markRunStarted();
     setDifficulty(d);
+    setGameMode(mode);
     applyDifficultyHp(d);
 
     setShield(0);
@@ -245,7 +249,7 @@ export default function App() {
     if (!engineRef.current) return;
     const engine = engineRef.current;
     engine.resetGame();
-    engine.setDifficulty(difficulty); // resetGame 会重建 player，难度同步重设
+    engine.setDifficulty(difficulty); // resetGame 会重建 player，难度同步重设（gameMode 保留原局模式）
     engine.markRunStarted();
     applyDifficultyHp(difficulty);
     setActiveAffixes([]);
@@ -270,6 +274,7 @@ export default function App() {
     sound.unlock();
     eng.restoreFromSnapshot(resumeSnapshot);
     setDifficulty(resumeSnapshot.difficulty);
+    setGameMode(resumeSnapshot.mode ?? 'CLASSIC'); // 旧快照无 mode 字段视为经典
     setActiveAffixes([...resumeSnapshot.player.affixes]);
     setBossInfo(null);
     setIsPaused(false);
@@ -372,6 +377,7 @@ export default function App() {
           onOpenSaveManager={() => setShowSaveManager(true)}
           onResumeRun={resumeSnapshot ? handleResumeRun : undefined}
           resumeWave={resumeSnapshot?.wave}
+          resumeMode={resumeSnapshot?.mode ?? 'CLASSIC'}
           records={records}
         />
       )}
@@ -390,6 +396,7 @@ export default function App() {
           enemiesLeft={enemiesLeft}
           combo={combo}
           score={score}
+          gameMode={gameMode}
           isMuted={isMuted}
           volume={volume}
           onVolumeChange={handleVolumeChange}
@@ -442,6 +449,7 @@ export default function App() {
           onReroll={handleRerollAffixes}
           rerollsLeft={rerollsLeft}
           wave={wave}
+          gameMode={gameMode}
         />
       )}
 

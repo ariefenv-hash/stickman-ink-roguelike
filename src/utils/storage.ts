@@ -23,6 +23,8 @@ const DEFAULT_RECORDS: PersistentRecords = {
   totalRuns: 0,
   victories: 0,
   lastPlayedAt: 0,
+  musouHighScore: 0,
+  musouBestWave: 0,
 };
 
 export function loadRecords(): PersistentRecords {
@@ -38,6 +40,8 @@ export function loadRecords(): PersistentRecords {
       totalKills: Math.max(0, Number(parsed.totalKills) || 0),
       totalRuns: Math.max(0, Number(parsed.totalRuns) || 0),
       victories: Math.max(0, Number(parsed.victories) || 0),
+      musouHighScore: Math.max(0, Number(parsed.musouHighScore) || 0),
+      musouBestWave: Math.max(0, Number(parsed.musouBestWave) || 0),
     };
   } catch {
     return { ...DEFAULT_RECORDS };
@@ -46,13 +50,17 @@ export function loadRecords(): PersistentRecords {
 
 export function saveRunStats(stats: RunStats, isVictory: boolean): PersistentRecords {
   const records = loadRecords();
+  // 无双模式独立计入无双榜（无通关概念，isVictory 恒 false）；经典榜不受影响
+  const isMusou = stats.mode === 'MUSOU';
   const updated: PersistentRecords = {
-    highScore: Math.max(records.highScore, stats.score),
-    bestWave: Math.max(records.bestWave, stats.wave),
+    highScore: Math.max(records.highScore, isMusou ? 0 : stats.score),
+    bestWave: Math.max(records.bestWave, isMusou ? 0 : stats.wave),
     totalKills: records.totalKills + stats.kills,
     totalRuns: records.totalRuns + 1,
     victories: records.victories + (isVictory ? 1 : 0),
     lastPlayedAt: Date.now(),
+    musouHighScore: Math.max(records.musouHighScore, isMusou ? stats.score : 0),
+    musouBestWave: Math.max(records.musouBestWave, isMusou ? stats.wave : 0),
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
@@ -182,6 +190,8 @@ export function applyImportedPayload(raw: string): ImportResult {
     totalRuns: Math.max(local.totalRuns, Number(incoming.totalRuns) || 0),
     victories: Math.max(local.victories, Number(incoming.victories) || 0),
     lastPlayedAt: Math.max(local.lastPlayedAt, Number(incoming.lastPlayedAt) || 0),
+    musouHighScore: Math.max(local.musouHighScore, Number(incoming.musouHighScore) || 0),
+    musouBestWave: Math.max(local.musouBestWave, Number(incoming.musouBestWave) || 0),
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
