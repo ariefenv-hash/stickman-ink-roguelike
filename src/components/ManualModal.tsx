@@ -130,7 +130,7 @@ export const ManualModal: React.FC<ManualModalProps> = ({ onClose }) => {
         <div className="p-2.5 mb-4 bg-[#fdf6e3] rounded-lg border border-[#d9a844] flex items-start gap-2">
           <Sparkles className="w-4 h-4 text-[#b45309] shrink-0 mt-0.5" />
           <div className="text-[10px] font-ink-serif text-[#85745a] leading-relaxed">
-            <span className="text-[#b45309] font-semibold">觉醒技·万墨归宗</span>：命中与击杀积累觉醒槽，满槽后按 <strong className="text-[#b45309]">[G]</strong> 或点「觉」按钮释放全屏墨爆，重创周身所有妖敌（可击穿墨盾武僧的正面格挡），释放后短暂无敌——绝境反打的保命底牌！
+            <span className="text-[#b45309] font-semibold">觉醒技·万墨归宗</span>：命中与击杀积累觉醒槽，满槽后按 <strong className="text-[#b45309]">[G]</strong> 或点「觉」按钮释放超大范围墨浪重创周身所有妖敌（可击穿墨盾武僧的正面格挡，对 Boss 与精英附加压制伤害，无双下连招链越高威力越猛），释放后短暂无敌——绝境反打与清场收割的底牌！
           </div>
         </div>
 

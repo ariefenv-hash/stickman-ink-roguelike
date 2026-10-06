@@ -97,6 +97,8 @@ const MUSOU_TUNING = {
   musouRetry: 0.4,         // 拥挤保护触发后的重试间隔（经典 0.75s）
   spawnGraceSec: 0.85,     // 无双出生宽限（经典 0.6s）：怪海密集下出生淡入更久，不被落地围欧
   enemyAttackCdMult: 1.35, // 无双敌近战攻击冷却乘数：怪海围压但不高速轮炊，保玩家喘息空间
+  ultRadiusMult: 1.15,     // 无双奥义范围额外乘数：怪海覆盖更大，满槽一刀清大场
+  ultFxOrangeBudget: 24,   // 奥义全额特效预算：前 N 只全额墨花浮字，其余静默结算（怪海帧率护栏）
 };
 
 /** 无双普通阵名池：随阵号轮换，营造「杀不完的妖墨浪潮」氛围 */
@@ -918,8 +920,10 @@ export class GameEngine {
     this.triggerSlowMo(0.55);
     this.triggerZoomPunch(0.06);
     this.triggerInkEdge(0.6);
-    this.cameraShake = Math.max(this.cameraShake, 20);
-    const R = 340 * (1 + this.sumStat('awakeningRadiusBonus') / 100);
+    this.cameraShake = Math.max(this.cameraShake, 22);
+    // 奥义大范围：基础 560（原 340）+ 无双怪海再 ×1.15 + 觉醒范围词条 → 一发覆盖近半战场
+    const ultRadiusMusouMult = this.gameMode === 'MUSOU' ? MUSOU_TUNING.ultRadiusMult : 1;
+    const R = 560 * ultRadiusMusouMult * (1 + this.sumStat('awakeningRadiusBonus') / 100);
     this.spawnShockRing(player.pos.x, player.pos.z, 14, R, 0.75, '#1a1611', 5);
     this.spawnShockRing(player.pos.x, player.pos.z, 8, R * 0.62, 0.5, '#b91c1c', 4);
     this.spawnInkBurst(player.pos, 40, '#171513');
@@ -931,8 +935,13 @@ export class GameEngine {
     sound.playBossWarn();
 
     // 全域墨浪伤害 + 击退硬直
+    // 伤害大改：基础 320（原 90）× 词条攻 × 觉醒词条 × 无双连招链（连招越高奥义越重）；
+    // 35% 真·暴击（这次真乘暴击倍率，原先只换红字演出不加伤）；
+    // Boss/精英额外吃最大气血 6%/3% 的压制伤害——高阵 Boss 血量线性成长也压得住
     const ultMult = 1 + this.sumStat('awakeningDamageBonus') / 100;
-    const baseDmg = Math.round(90 * this.getAffixDamageMultiplier() * ultMult);
+    const baseDmg = Math.round(320 * this.getAffixDamageMultiplier() * ultMult * this.chainDmgMult);
+    let fxBudget = MUSOU_TUNING.ultFxOrangeBudget; // 特效预算：前 N 只全额墨花浮字，其余静默结算（怪海帧率护栏）
+    let ultHitCount = 0;
     for (const enemy of this.enemies) {
       if (enemy.hp <= 0) continue;
       const d = Math.hypot(enemy.pos.x - player.pos.x, enemy.pos.z - player.pos.z);
@@ -943,9 +952,20 @@ export class GameEngine {
       enemy.vel.z = dirZ * 8;
       enemy.hitStun = Math.max(enemy.hitStun, 0.95);
       enemy.maxHitStun = enemy.hitStun;
-      this.spawnInkBurst(enemy.pos, 8, '#171513');
+      ultHitCount++;
+      const isCrit = Math.random() < 0.35;
+      let dmg = isCrit ? baseDmg * this.getCritMultiplier() : baseDmg;
+      if (enemy.isBoss) dmg += enemy.maxHp * 0.06;
+      else if (enemy.elite) dmg += enemy.maxHp * 0.03;
+      const fx: 1 | 0 = fxBudget > 0 ? (fxBudget--, 1) : 0;
+      if (fx) this.spawnInkBurst(enemy.pos, 8, '#171513');
       // 觉醒墨浪全方位冲击：绕过墨盾武僧正面格挡，全额结算
-      this.damageEnemy(enemy, baseDmg, Math.random() < 0.3, 0.6, false, true);
+      this.damageEnemy(enemy, Math.round(dmg), isCrit, 0.6, false, true, fx);
+    }
+    if (ultHitCount >= 18) {
+      // 大范围收割演出：覆盖妖墨众多时补一次镜头冲击 + 荡字
+      this.triggerZoomPunch(0.035);
+      this.addFloatingText('荡', player.pos.x, player.pos.y + 130, '#fbbf24', 1.6, true, true);
     }
 
     // 释放后短暂无敌 + 墨意回补，鼓励绝境反打
