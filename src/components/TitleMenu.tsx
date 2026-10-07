@@ -7,10 +7,10 @@ import inkSeal from '@/src/assets/images/title_seal.png';
 
 import React, { useState } from 'react';
 import { Play, BookOpen, Trophy, Swords, Landmark, Crown, Save, Feather, Skull } from 'lucide-react';
-import { GameMode, PersistentRecords } from '../types/game';
+import { Difficulty, GameMode, PersistentRecords } from '../types/game';
 
 interface TitleMenuProps {
-  onStart: (difficulty: 'EASY' | 'NORMAL' | 'HARD', mode: GameMode) => void;
+  onStart: (difficulty: Difficulty, mode: GameMode) => void;
   onOpenManual: () => void;
   onOpenSaveManager: () => void;
   /** 有未完成征战认领时展示「续战」入口 */
@@ -21,7 +21,7 @@ interface TitleMenuProps {
 }
 
 export const TitleMenu: React.FC<TitleMenuProps> = ({ onStart, onOpenManual, onOpenSaveManager, onResumeRun, resumeWave, resumeMode = 'CLASSIC', records }) => {
-  const [difficulty, setDifficulty] = useState<'EASY' | 'NORMAL' | 'HARD'>('NORMAL');
+  const [difficulty, setDifficulty] = useState<Difficulty>('NORMAL');
   const [mode, setMode] = useState<GameMode>('CLASSIC');
   const isMusou = mode === 'MUSOU';
 
@@ -147,7 +147,7 @@ export const TitleMenu: React.FC<TitleMenuProps> = ({ onStart, onOpenManual, onO
           <div className="text-xs font-ink-serif text-[#85745a] mb-2 text-center">
             选择江湖试炼难度
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <button
               onClick={() => setDifficulty('EASY')}
               className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
@@ -183,6 +183,25 @@ export const TitleMenu: React.FC<TitleMenuProps> = ({ onStart, onOpenManual, onO
               <div className="font-calligraphy text-sm sm:text-base">宗师绝顶</div>
               <div className="text-[10px] font-ink-serif mt-0.5 opacity-80">强敌环伺</div>
             </button>
+
+            <button
+              onClick={() => setDifficulty('EXTREME')}
+              className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                difficulty === 'EXTREME'
+                  ? 'bg-[#e6dcc4] border-[#7c3aed] text-[#6d28d9] shadow-md shadow-[#7c3aed]/30'
+                  : 'bg-[#ece4d0] border-[#c4b494] text-[#85745a] hover:border-[#b3a181]'
+              }`}
+            >
+              <div className="font-calligraphy text-sm sm:text-base">天劫墨难</div>
+              <div className="text-[10px] font-ink-serif mt-0.5 opacity-80">九死一生</div>
+            </button>
+          </div>
+          <div className="text-[10px] font-ink-serif text-[#937f60] text-center mt-2">
+            {difficulty === 'EXTREME'
+              ? '天劫墨难：妖墨血厚四成五、伤重六成、狂潮加倍——功绩 ×1.5，以身试劫方登墨道之巅'
+              : difficulty === 'HARD'
+                ? '宗师绝顶：妖墨血厚伤重、倾巢而出——功绩 ×1.25'
+                : '难度影响妖墨强度、刷怪密度与初始气血（初入江湖 180 / 炉火纯青 120 / 宗师绝顶 90 / 天劫墨难 70）'}
           </div>
         </div>
 

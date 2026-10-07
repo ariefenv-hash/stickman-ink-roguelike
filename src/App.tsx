@@ -12,7 +12,7 @@ import { GameOverModal } from './components/GameOverModal';
 import { PauseOverlay } from './components/PauseOverlay';
 import { TitleMenu } from './components/TitleMenu';
 import { SaveManagerModal } from './components/SaveManagerModal';
-import { Affix, BossHudInfo, ControlMode, GameMode, GestureResult, RunSnapshot, RunStats } from './types/game';
+import { Affix, BossHudInfo, ControlMode, Difficulty, GameMode, GestureResult, RunSnapshot, RunStats } from './types/game';
 import { drawRandomAffixes } from './game/affixes';
 import { sound } from './utils/audio';
 import {
@@ -65,7 +65,7 @@ export default function App() {
   const [records, setRecords] = useState<PersistentRecords>(() => loadRecords());
   const [newRecord, setNewRecord] = useState<boolean>(false);
   // 本局难度：重开一局时按同难度重置初始血量（此前重开丢失难度加成，EASY/HARD 回退 120）
-  const [difficulty, setDifficulty] = useState<'EASY' | 'NORMAL' | 'HARD'>('NORMAL');
+  const [difficulty, setDifficulty] = useState<Difficulty>('NORMAL');
   // 本局玩法模式：经典征战 / 无双演武（决定引擎刷怪/BOSS 节奏与结算记录分流）
   const [gameMode, setGameMode] = useState<GameMode>('CLASSIC');
   // 未完成征战认领（单局进度快照）：标题界面显示「续战」入口
@@ -201,7 +201,7 @@ export default function App() {
   }, []);
 
   // 按难度应用初始血量（开局与重开共用；此前重开不重设，EASY/HARD 难度加成丢失）
-  const applyDifficultyHp = (d: 'EASY' | 'NORMAL' | 'HARD') => {
+  const applyDifficultyHp = (d: Difficulty) => {
     const engine = engineRef.current;
     if (!engine) return;
     if (d === 'EASY') {
@@ -214,13 +214,19 @@ export default function App() {
       engine.player.maxHp = 90;
       setHp(90);
       setMaxHp(90);
+    } else if (d === 'EXTREME') {
+      // 天劫墨难：九死一生，初始气血仅 70——一笔之差便是身陨道消
+      engine.player.hp = 70;
+      engine.player.maxHp = 70;
+      setHp(70);
+      setMaxHp(70);
     } else {
       setHp(engine.player.hp);
       setMaxHp(engine.player.maxHp);
     }
   };
 
-  const handleStartGame = (d: 'EASY' | 'NORMAL' | 'HARD', mode: GameMode = 'CLASSIC') => {
+  const handleStartGame = (d: Difficulty, mode: GameMode = 'CLASSIC') => {
     if (!engineRef.current) return;
     const engine = engineRef.current;
     sound.unlock();

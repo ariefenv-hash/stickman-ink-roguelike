@@ -29,6 +29,7 @@ const DIFFICULTY_LABEL: Record<string, string> = {
   EASY: '初入江湖',
   NORMAL: '炉火纯青',
   HARD: '宗师绝顶',
+  EXTREME: '天劫墨难',
 };
 
 export const SaveManagerModal: React.FC<SaveManagerModalProps> = ({

@@ -378,7 +378,7 @@ export interface RunStats {
 }
 
 // 难度等级（引擎与存档共用；engine.ts 保留 re-export）
-export type Difficulty = 'EASY' | 'NORMAL' | 'HARD';
+export type Difficulty = 'EASY' | 'NORMAL' | 'HARD' | 'EXTREME';
 
 // 玩法模式：CLASSIC 经典征战（15折通关线）/ MUSOU 无双演武（怪海割草，无通关概念）
 export type GameMode = 'CLASSIC' | 'MUSOU';

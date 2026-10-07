@@ -48,6 +48,8 @@ const DIFFICULTY_TUNING: Record<Difficulty, { enemyHp: number; enemyDmg: number;
   EASY: { enemyHp: 0.85, enemyDmg: 0.75, spawnRate: 1.25 },
   NORMAL: { enemyHp: 1.0, enemyDmg: 1.0, spawnRate: 1.0 },
   HARD: { enemyHp: 1.2, enemyDmg: 1.3, spawnRate: 0.82 },
+  // 天劫墨难：妖墨狂性大发（血厚 45%/伤重 60%/刷怪提速 35%），配玩家 70 气血——为墨道巅峰强者准备的九死一生
+  EXTREME: { enemyHp: 1.45, enemyDmg: 1.6, spawnRate: 0.65 },
 };
 
 /**
@@ -870,10 +872,11 @@ export class GameEngine {
     };
   }
 
-  /** 连击加成计分 */
+  /** 连击加成计分（难度加成：天劫墨难 ×1.5 / 宗师绝顶 ×1.25 / 初入江湖 ×0.85——高风险高回报） */
   private addScore(base: number) {
     const comboMult = 1 + Math.min(50, this.player.comboCount) * 0.02;
-    this.score += Math.round(base * comboMult);
+    const diffMult = this.difficulty === 'EXTREME' ? 1.5 : this.difficulty === 'HARD' ? 1.25 : this.difficulty === 'EASY' ? 0.85 : 1.0;
+    this.score += Math.round(base * comboMult * diffMult);
     this.runStats.score = this.score;
     this.emitScore();
   }
