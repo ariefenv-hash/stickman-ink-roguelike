@@ -62,6 +62,11 @@ export interface Affix {
     // --- 画龙点睛（精准打击） ---
     eyeStrikeEnabled?: boolean;       // 挥砍笔迹划过妖敌头部要穴时触发点睛会心
     eyeStrikeBonus?: number;          // 点睛一击的伤害加成（百分比）
+    // --- 增伤百分比词条扩展 ---
+    berserkDamageBonus?: number;      // 气血低于50%时攻击力提升（百分比）
+    bossSlayerPercent?: number;       // 对 Boss 与精英伤害提升（百分比）
+    comboDamagePercent?: number;      // 每10连击攻击力+4%（上限=该值）
+    killStackDamageBonus?: number;    // 每8击杀攻击力永久+1%（上限=该值）
   };
 }
 

@@ -2365,6 +2365,21 @@ export class GameEngine {
         mult += affix.stats.attackBonus / 100;
       }
     }
+    // 怒发冲冠：背水之势——气血低于一半时攻击力提升（绝境爆发，与觉醒反打思路同契）
+    const berserk = this.sumStat('berserkDamageBonus');
+    if (berserk > 0 && this.player.hp > 0 && this.player.hp < this.player.maxHp * 0.5) {
+      mult += berserk / 100;
+    }
+    // 连战连决：每10连击攻击力+4%（上限=词条值，无双割草下高连击近乎常驻）
+    const comboCap = this.sumStat('comboDamagePercent');
+    if (comboCap > 0 && this.player.comboCount >= 10) {
+      mult += Math.min(comboCap, Math.floor(this.player.comboCount / 10) * 4) / 100;
+    }
+    // 煞气冲霄：每8击杀攻击力永久+1%（上限=词条值，整局滚雪球）
+    const killStackCap = this.sumStat('killStackDamageBonus');
+    if (killStackCap > 0 && this.runStats.kills >= 8) {
+      mult += Math.min(killStackCap, Math.floor(this.runStats.kills / 8)) / 100;
+    }
     return mult;
   }
 
@@ -2571,6 +2586,12 @@ export class GameEngine {
   private damageEnemy(enemy: EnemyEntity, damage: number, isCrit: boolean = false, stunOverride?: number, isGesture: boolean = false, bypassShield: boolean = false, fxLevel: 1 | 0 = 1) {
     if (enemy.hp <= 0) return;
     const player = this.player;
+
+    // 破阵摧坚：对首领与精英的伤害提升（全域伤害源生效——挥砍/剑气/奥义/雷击皆算）
+    const bossSlayer = this.sumStat('bossSlayerPercent');
+    if (bossSlayer > 0 && (enemy.isBoss || enemy.elite)) {
+      damage = Math.round(damage * (1 + bossSlayer / 100));
+    }
 
     // 拆除判定：爆墨傀儡引信期间被击杀 → 无爆炸 + 额外功绩
     const wasPriming = enemy.type === 'INK_BOMBER' && (enemy.windupTimer ?? 0) > 0;

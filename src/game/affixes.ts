@@ -334,6 +334,99 @@ export const ALL_AFFIXES: Affix[] = [
       gestureBonus: 12,
     },
   },
+  // ==================== 增伤百分比扩充（27 → 35） ====================
+  {
+    id: 'ink_fury',
+    name: '醉笔狂澜',
+    hanziSeal: '澜',
+    rarity: 'COMMON',
+    desc: '墨劲奔涌不加拘束：攻击力提高18%。',
+    iconType: 'sword',
+    stats: {
+      attackBonus: 18,
+    },
+  },
+  {
+    id: 'grind_ink',
+    name: '磨墨添锋',
+    hanziSeal: '锋',
+    rarity: 'COMMON',
+    desc: '磨墨千遍，笔锋日利：攻击力提高12%，暴击率提升5%。',
+    iconType: 'brush',
+    stats: {
+      attackBonus: 12,
+      critChanceBonus: 0.05,
+    },
+  },
+  {
+    id: 'crown_rage',
+    name: '怒发冲冠',
+    hanziSeal: '怒',
+    rarity: 'RARE',
+    desc: '背水一战血愈勇：气血低于50%时攻击力提升35%，越险越强。',
+    iconType: 'flame',
+    stats: {
+      berserkDamageBonus: 35,
+    },
+  },
+  {
+    id: 'chain_victory',
+    name: '连战连决',
+    hanziSeal: '势',
+    rarity: 'RARE',
+    desc: '连招不绝攻势如潮：每10连击攻击力+4%，最高提升32%。',
+    iconType: 'sword',
+    stats: {
+      comboDamagePercent: 32,
+    },
+  },
+  {
+    id: 'dragon_run',
+    name: '笔走龙蛇',
+    hanziSeal: '蛇',
+    rarity: 'RARE',
+    desc: '笔势游走若龙蛇飞动：手势招式伤害提升25%，暴击率提升8%。',
+    iconType: 'brush',
+    stats: {
+      gestureBonus: 25,
+      critChanceBonus: 0.08,
+    },
+  },
+  {
+    id: 'paper_pierce',
+    name: '力透纸背',
+    hanziSeal: '透',
+    rarity: 'EPIC',
+    desc: '笔力千钧入木三分：攻击力提高22%，暴击伤害提升50%。',
+    iconType: 'sword',
+    stats: {
+      attackBonus: 22,
+      critDamageBonus: 50,
+    },
+  },
+  {
+    id: 'army_breaker',
+    name: '破阵摧坚',
+    hanziSeal: '摧',
+    rarity: 'EPIC',
+    desc: '千军之中直取上将首级：对首领与精英妖敌伤害提升30%，攻击力+8%。',
+    iconType: 'lightning',
+    stats: {
+      bossSlayerPercent: 30,
+      attackBonus: 8,
+    },
+  },
+  {
+    id: 'shaqi_sky',
+    name: '煞气冲霄',
+    hanziSeal: '煞',
+    rarity: 'LEGENDARY',
+    desc: '笔下妖墨愈多，煞气愈盛：每击杀8名妖敌攻击力永久+1%（上限+30%），怪海中的滚雪球绝品。',
+    iconType: 'flame',
+    stats: {
+      killStackDamageBonus: 30,
+    },
+  },
 ];
 
 /** 稀有度基础权重（越高越稀有） */
