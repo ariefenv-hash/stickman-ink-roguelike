@@ -1093,13 +1093,52 @@ export class GameEngine {
     }
   }
 
+  /**
+   * 中文数字（支持 0 ~ 9999，万位以上兜底为阿拉伯数字）
+   * 修复：原实现仅覆盖 0~99，且整十数会输出「五十零」，
+   *      100 阵以上 chars[Math.floor(n/10)] 越界返回 undefined，横幅直接显示「undefined十X」。
+   */
   private getChineseNumeral(n: number): string {
-    const chars = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
-    if (n <= 10) return chars[n];
-    if (n < 20) return `十${chars[n % 10]}`;
-    if (n === 20) return '二十';
-    if (n < 30) return `二十${chars[n % 10]}`;
-    return `${chars[Math.floor(n / 10)]}十${chars[n % 10] || ''}`;
+    const chars = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+    if (!Number.isFinite(n) || n < 0) return '零';
+    const i = Math.floor(n);
+
+    if (i <= 10) return i === 10 ? '十' : chars[i];
+    if (i < 20) return `十${chars[i - 10]}`;
+
+    // 20 ~ 99
+    if (i < 100) {
+      const tens = Math.floor(i / 10);
+      const ones = i % 10;
+      return `${chars[tens]}十${ones > 0 ? chars[ones] : ''}`;
+    }
+
+    // 100 ~ 999
+    if (i < 1000) {
+      const hundreds = Math.floor(i / 100);
+      const rest = i % 100;
+      const head = `${chars[hundreds]}百`;
+      if (rest === 0) return head;
+      if (rest < 10) return `${head}零${chars[rest]}`;
+      // 十位为 1 时保留「一」：一百一十 / 一百一十五
+      const tens = Math.floor(rest / 10);
+      const ones = rest % 10;
+      if (tens === 1) return `${head}一十${ones > 0 ? chars[ones] : ''}`;
+      return `${head}${chars[tens]}十${ones > 0 ? chars[ones] : ''}`;
+    }
+
+    // 1000 ~ 9999
+    if (i < 10000) {
+      const thousands = Math.floor(i / 1000);
+      const rest = i % 1000;
+      const head = `${chars[thousands]}千`;
+      if (rest === 0) return head;
+      if (rest < 100) return `${head}零${this.getChineseNumeral(rest)}`;
+      return head + this.getChineseNumeral(rest);
+    }
+
+    // 一万以上（无尽极限局）兜底：直接阿拉伯数字，绝不再出现 undefined
+    return String(i);
   }
 
   // --- ELITE MODIFIERS ---
